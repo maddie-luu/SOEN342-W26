@@ -1,75 +1,77 @@
-# Java SQLite Project
+# Personal Task Management System
 
-A Java project demonstrating a clean persistence layer with SQLite.
+## Project Overview
+This module contains the Java implementation of the SOEN 342 Personal Task Management System. It is a command-line application built with Maven and backed by SQLite for persistence. The implementation follows an object-oriented, requirements-driven approach informed by the UML and analysis artifacts in the repository.
+
+## Course Context
+This project is part of **SOEN 342: Software Requirements and Deployment** at Concordia University. It represents the implementation side of the course project and aligns with the Iteration I core system requirements and the Iteration II proof-of-concept extensions.
+
+## Core Features
+- Single-user personal task management
+- Task creation with title, optional description, creation date, priority, status, and optional due date
+- Support for standalone tasks or tasks assigned to one project
+- Support for subtasks and tags
+- Task update workflows
+- Task listing, search, and view operations
+- Activity history for task-related actions
+
+## Iteration II / PoC Features
+- Recurring tasks and task occurrences
+- Project collaborators
+- Collaborator categories: Senior, Intermediate, and Junior
+- Open-task limits by collaborator category
+- Search by criteria
+- CSV export for search results or database results
+- CSV import for tasks
+- Proof-of-concept focus on task search/view, CSV import, and CSV export
+- Partial persistence layer for Iteration II features
 
 ## Project Structure
+The current implementation still contains some scaffold naming from the starter codebase, but the intended architecture is organized around task management concerns.
 
-```
+```text
 src/
 ├── main/
 │   ├── java/com/example/
-│   │   ├── Application.java          # Main application entry point
-│   │   ├── model/
-│   │   │   └── User.java             # User entity model
-│   │   └── persistence/
-│   │       ├── DatabaseConnection.java # Database connection utility
-│   │       └── UserDAO.java           # Data Access Object for Users
+│   │   ├── Application.java            # Main command-line entry point
+│   │   ├── TaskManagementCLI.java      # CLI menu and task-management interaction flow
+│   │   ├── model/                      # Domain entities for tasks, projects, tags, collaborators, etc.
+│   │   └── persistence/                # SQLite connection and persistence classes
 │   └── resources/
-│       └── logback.xml               # Logging configuration
-└── test/
-    └── java/com/example/             # Unit tests
+│       └── logback.xml                 # Logging configuration
+└── test/                               # Unit tests
 
-pom.xml                               # Maven configuration
+pom.xml                                 # Maven configuration
 ```
 
-## Features
+## Technologies Used
+- Java 11
+- Maven
+- SQLite
+- SQLite JDBC
+- SLF4J
+- Logback
+- JUnit
 
-- **SQLite Database**: Lightweight, file-based SQL database
-- **DAO Pattern**: Clean separation of data access logic
-- **Connection Pooling**: Utility class for database connections
-- **Logging**: SLF4J with Logback for application logging
-- **CRUD Operations**: Full Create, Read, Update, Delete functionality
-
-## Dependencies
-
-- **sqlite-jdbc**: SQLite JDBC driver (org.xerial:sqlite-jdbc)
-- **SLF4J**: Simple Logging Facade for Java
-- **Logback**: SLF4J implementation
-- **JUnit**: Unit testing framework
-
-## Building the Project
-
+## Build Instructions
 ```bash
 mvn clean install
 ```
 
-## Running the Application
-
+## Run Instructions
 ```bash
 mvn exec:java -Dexec.mainClass="com.example.Application"
 ```
 
-## Database
+## Database / Persistence Notes
+- SQLite is used for the current persistence setup.
+- The database file used by the project is `app_database.db`.
+- Database initialization is wired into application startup.
+- The persistence layer is currently partial and reflects the proof-of-concept state for Iteration II.
 
-The SQLite database file (`app_database.db`) is created automatically in the project root when the application runs for the first time.
-
-## Example Usage
-
-The `Application` class demonstrates:
-1. Database initialization
-2. Creating users
-3. Retrieving all users
-4. Retrieving specific users (by ID and email)
-5. Updating user information
-6. Deleting users
-
-## Extending the Project
-
-To add more entities:
-1. Create a model class in `com.example.model`
-2. Create a corresponding DAO class in `com.example.persistence`
-3. Add table creation method to `DatabaseConnection.initializeDatabase()`
-
-## License
-
-MIT
+## Contributors
+| Name | ID | GitHub |
+|---|---:|---|
+| Vincent de Serres | 40272920 | [vinnythepoo2](https://github.com/vinnythepoo2) |
+| Ahmed Eskaf | 40235587 | [A-Eskaf](https://github.com/A-Eskaf) |
+| Madison Luu | 40282381 | [maddie-luu](https://github.com/maddie-luu) |
