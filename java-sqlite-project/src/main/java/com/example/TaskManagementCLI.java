@@ -1,5 +1,8 @@
 package com.example;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.InputMismatchException;
 import java.util.Scanner;
 
@@ -11,6 +14,7 @@ import java.util.Scanner;
 public class TaskManagementCLI {
 
     private final Scanner scanner;
+    public final ArrayList<task> tasks = new ArrayList<>();    
 
     public TaskManagementCLI() {
         this.scanner = new Scanner(System.in);
@@ -91,8 +95,23 @@ public class TaskManagementCLI {
     }
 
     private void createTask() {
-        System.out.println("[Create task] - functionality to be implemented.");
+        task newTask = new task();
+        System.out.print("Enter task title: ");
+        newTask.setTitle(scanner.nextLine());
+        System.out.print("Enter task description: ");
+        newTask.setDescription(scanner.nextLine());
+        System.out.print("Enter task priority level (low, medium, high): ");
+        newTask.setPriorityLevel(scanner.nextLine());
+        System.out.print("Enter task due date (YYYY-MM-DD): ");
+        String dueDateInput = scanner.nextLine();
+        try {
+            newTask.setDuedate(LocalDate.parse(dueDateInput));
+        } catch (DateTimeParseException e) {
+            System.out.println("Invalid date format. Task will be created without a due date.");   
+        }
+        tasks.add(newTask);
     }
+
 
     private void createProject() {
         System.out.println("[Create project] - functionality to be implemented.");
@@ -111,7 +130,15 @@ public class TaskManagementCLI {
     }
 
     private void viewTasks() {
-        System.out.println("[View tasks] - functionality to be implemented.");
+        if (tasks.isEmpty()) {
+            System.out.println("No tasks available.");
+        } else {
+            System.out.println("Tasks:");
+            for (int i = 0; i < tasks.size(); i++) {
+                task t = tasks.get(i);
+                System.out.print(t.toString());
+            }
+        }
     }
 
     private void searchTasks() {
@@ -121,4 +148,23 @@ public class TaskManagementCLI {
     private void viewTaskHistory() {
         System.out.println("[History of task-related activities] - functionality to be implemented.");
     }
+
+    public ArrayList<task> getTasks() {
+        return tasks;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        for (task t : tasks) {
+            sb.append("Title: ").append(t.getTitle()).append("\n");
+            sb.append("Description: ").append(t.getDescription()).append("\n");
+            sb.append("Priority: ").append(t.getPriorityLevel()).append("\n");
+            sb.append("Due Date: ").append(t.getDuedate()).append("\n");
+            sb.append("Status: ").append(t.getStatus()).append("\n");
+            sb.append("-----------------------------\n");
+        }
+        return sb.toString();
+    }
 }
+
