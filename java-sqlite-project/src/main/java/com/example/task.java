@@ -2,7 +2,7 @@ package com.example;
 import java.time.*; 
 import java.util.ArrayList;
 
-public class task {
+public class Task {
     private String title; 
     private String description;
     private LocalDate createdDate = LocalDate.now();
@@ -77,10 +77,10 @@ public class task {
     }
 
     //Default constructor to create an empty task object.
-    public task() {
+    public Task() {
     }
     // Constructor with paramters to initialize the task object with the provided values. Description and due date are optional. 
-    public task(String title, String description, String priorityLevel, LocalDate duedate) {
+    public Task(String title, String description, String priorityLevel, LocalDate duedate) {
         this.title = title;
         this.description = description;
         this.priorityLevel = priorityLevel;

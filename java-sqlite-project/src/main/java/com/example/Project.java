@@ -4,7 +4,7 @@ import java.util.ArrayList;
 public class Project {
     private String title; 
     private String description; 
-    private ArrayList<task> tasks = new ArrayList<>();
+    private ArrayList<Task> tasks = new ArrayList<>();
 
     public String getTitle() {
         return title; 
@@ -24,18 +24,18 @@ public class Project {
         return description;
     }
 
-    public ArrayList<task> getTasks() {
+    public ArrayList<Task> getTasks() {
         return tasks;
     }
-    public void setTasks(ArrayList<task> tasks) {
+    public void setTasks(ArrayList<Task> tasks) {
         this.tasks = tasks;
     }
 
-    public void addTask(task t) {
+    public void addTask(Task t) {
         tasks.add(t);
     }
 
-    public void removeTask(task t) {
+    public void removeTask(Task t) {
         tasks.remove(t);
     }
 
@@ -54,7 +54,7 @@ public class Project {
         sb.append("Project Title: ").append(title).append("\n");
         sb.append("Description: ").append(description).append("\n");
         sb.append("Tasks:\n");
-        for (task t : tasks) {
+        for (Task t : tasks) {
             sb.append(t.toString()).append("\n");
         }
         return sb.toString();
