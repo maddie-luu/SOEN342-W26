@@ -14,7 +14,7 @@ import java.util.Scanner;
 public class TaskManagementCLI {
 
     private final Scanner scanner;
-    public final ArrayList<task> tasks = new ArrayList<>();    
+    public final ArrayList<Task> tasks = new ArrayList<>();    
     public final ArrayList<Project> projects = new ArrayList<>();
 
     public TaskManagementCLI() {
@@ -96,7 +96,7 @@ public class TaskManagementCLI {
     }
 
     private void createTask() {
-        task newTask = new task();
+        Task newTask = new Task();
         System.out.print("Enter task title: ");
         newTask.setTitle(scanner.nextLine());
         System.out.print("Enter task description: ");
@@ -129,7 +129,63 @@ public class TaskManagementCLI {
     }
 
     private void editTask() {
-        System.out.println("[Edit task] - functionality to be implemented.");
+        System.out.println("Which tasks would you like to edit? (Enter task number)");
+        for(Task t : tasks) {
+            System.out.println((tasks.indexOf(t) + 1) + ". " + t.getTitle());
+        }
+        int taskNumber = readInt("Enter task number: ");
+        if (taskNumber >= 1 && taskNumber <= tasks.size()) {
+            Task task = tasks.get(taskNumber - 1);
+            System.out.println("What would you like to edit?");
+            System.out.println("1. Title");
+            System.out.println("2. Description");
+            System.out.println("3. Priority Level");
+            System.out.println("4. due date");
+            System.out.println("5. status");
+            System.out.println("6. associated project");
+            System.out.println("7. tags");
+
+            int editChoice = readInt("Enter your choice: ");
+            switch (editChoice) {
+                case 1:
+                    System.out.print("Enter new task title: ");
+                    task.setTitle(scanner.nextLine());
+                    break;
+                case 2:
+                    System.out.print("Enter new task description: ");
+                    task.setDescription(scanner.nextLine());
+                    break;
+                case 3:
+                    System.out.print("Enter new task priority level (low, medium, high): ");
+                    task.setPriorityLevel(scanner.nextLine());
+                    break;
+                case 4:
+                    System.out.print("Enter new task due date (YYYY-MM-DD): ");
+                    String dueDateInput = scanner.nextLine();
+                    try {
+                        task.setDuedate(LocalDate.parse(dueDateInput));
+                    } catch (DateTimeParseException e) {
+                        System.out.println("Invalid date format. Due date will not be updated.");
+                    }
+                    break;
+                case 5:
+                    System.out.print("Enter new task status (open, in progress, completed): ");
+                    task.setStatus(scanner.nextLine());
+                    break;  
+                case 6:
+                    System.out.println("[Edit associated project] - functionality to be implemented.");
+                    break;
+                case 7:
+                    System.out.println("[Edit tags] - functionality to be implemented.");
+                    break;  
+            
+                default:
+                    break;
+            }
+
+        } else {
+            System.out.println("Invalid task number.");
+        }
     }
 
     private void editProject() {
@@ -142,7 +198,7 @@ public class TaskManagementCLI {
         } else {
             System.out.println("Tasks:");
             for (int i = 0; i < tasks.size(); i++) {
-                task t = tasks.get(i);
+                Task t = tasks.get(i);
                 System.out.print(t.toString());
             }
         }
@@ -156,14 +212,14 @@ public class TaskManagementCLI {
         System.out.println("[History of task-related activities] - functionality to be implemented.");
     }
 
-    public ArrayList<task> getTasks() {
+    public ArrayList<Task> getTasks() {
         return tasks;
     }
 
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
-        for (task t : tasks) {
+        for (Task t : tasks) {
             sb.append("Title: ").append(t.getTitle()).append("\n");
             sb.append("Description: ").append(t.getDescription()).append("\n");
             sb.append("Priority: ").append(t.getPriorityLevel()).append("\n");
