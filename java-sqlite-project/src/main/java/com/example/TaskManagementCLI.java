@@ -15,6 +15,7 @@ public class TaskManagementCLI {
 
     private final Scanner scanner;
     public final ArrayList<task> tasks = new ArrayList<>();    
+    public final ArrayList<Project> projects = new ArrayList<>();
 
     public TaskManagementCLI() {
         this.scanner = new Scanner(System.in);
@@ -114,7 +115,13 @@ public class TaskManagementCLI {
 
 
     private void createProject() {
-        System.out.println("[Create project] - functionality to be implemented.");
+        Project project = new Project();
+        System.out.print("Enter project title: ");
+        project.setTitle(scanner.nextLine());
+        System.out.print("Enter project description: ");
+        project.setDescription(scanner.nextLine());
+        System.out.println("Project created successfully.");
+        projects.add(project);
     }
 
     private void assignTaskToProject() {
