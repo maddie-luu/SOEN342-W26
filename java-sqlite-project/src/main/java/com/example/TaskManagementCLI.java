@@ -13,7 +13,6 @@ import java.util.Comparator;
 import java.util.InputMismatchException;
 import java.util.List;
 import java.util.Scanner;
-
 /**
  * Simple command-line interface for task and project management.
  * This is the first step: providing the user menu and
