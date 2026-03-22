@@ -16,9 +16,14 @@ public class TaskManagementCLI {
     private final Scanner scanner;
     public final ArrayList<Task> tasks = new ArrayList<>();    
     public final ArrayList<Project> projects = new ArrayList<>();
+    
+    // TaskService handles task operations and activity tracking
+    private final TaskService taskService;
 
     public TaskManagementCLI() {
         this.scanner = new Scanner(System.in);
+        // Initialize TaskService with reference to the tasks list
+        this.taskService = new TaskService(tasks);
     }
 
     public void run() {
@@ -96,23 +101,28 @@ public class TaskManagementCLI {
     }
 
     private void createTask() {
-        Task newTask = new Task();
         System.out.print("Enter task title: ");
-        newTask.setTitle(scanner.nextLine());
+        String title = scanner.nextLine();
         System.out.print("Enter task description: ");
-        newTask.setDescription(scanner.nextLine());
+        String description = scanner.nextLine();
         System.out.print("Enter task priority level (low, medium, high): ");
-        newTask.setPriorityLevel(scanner.nextLine());
+        String priorityLevel = scanner.nextLine();
         System.out.print("Enter task due date (YYYY-MM-DD): ");
         String dueDateInput = scanner.nextLine();
+        
+        LocalDate dueDate = null;
         try {
-            newTask.setDuedate(LocalDate.parse(dueDateInput));
+            if (!dueDateInput.trim().isEmpty()) {
+                dueDate = LocalDate.parse(dueDateInput);
+            }
         } catch (DateTimeParseException e) {
             System.out.println("Invalid date format. Task will be created without a due date.");   
         }
-        tasks.add(newTask);
+        
+        // Use TaskService to create task (automatically records activity)
+        Task newTask = taskService.createTask(title, description, priorityLevel, dueDate);
+        System.out.println("✓ Task created successfully with ID: " + newTask.getId());
     }
-
 
     private void createProject() {
         Project project = new Project();
@@ -129,57 +139,84 @@ public class TaskManagementCLI {
     }
 
     private void editTask() {
-        System.out.println("Which tasks would you like to edit? (Enter task number)");
-        for(Task t : tasks) {
-            System.out.println((tasks.indexOf(t) + 1) + ". " + t.getTitle());
+        if (tasks.isEmpty()) {
+            System.out.println("No tasks available to edit.");
+            return;
         }
+        
+        System.out.println("Which task would you like to edit? (Enter task number)");
+        for (int i = 0; i < tasks.size(); i++) {
+            Task t = tasks.get(i);
+            System.out.println((i + 1) + ". [ID:" + t.getId() + "] " + t.getTitle());
+        }
+        
         int taskNumber = readInt("Enter task number: ");
         if (taskNumber >= 1 && taskNumber <= tasks.size()) {
             Task task = tasks.get(taskNumber - 1);
+            int taskId = task.getId();
+            
             System.out.println("What would you like to edit?");
             System.out.println("1. Title");
             System.out.println("2. Description");
             System.out.println("3. Priority Level");
-            System.out.println("4. due date");
-            System.out.println("5. status");
-            System.out.println("6. associated project");
-            System.out.println("7. tags");
+            System.out.println("4. Due date");
+            System.out.println("5. Mark as Completed");
+            System.out.println("6. Mark as Cancelled");
+            System.out.println("7. Tags");
 
             int editChoice = readInt("Enter your choice: ");
             switch (editChoice) {
                 case 1:
                     System.out.print("Enter new task title: ");
-                    task.setTitle(scanner.nextLine());
+                    String newTitle = scanner.nextLine();
+                    taskService.updateTask(taskId, newTitle, null, null, null);
+                    System.out.println("✓ Task title updated.");
                     break;
                 case 2:
                     System.out.print("Enter new task description: ");
-                    task.setDescription(scanner.nextLine());
+                    String newDesc = scanner.nextLine();
+                    taskService.updateTask(taskId, null, newDesc, null, null);
+                    System.out.println("✓ Task description updated.");
                     break;
                 case 3:
                     System.out.print("Enter new task priority level (low, medium, high): ");
-                    task.setPriorityLevel(scanner.nextLine());
+                    String newPriority = scanner.nextLine();
+                    taskService.updateTask(taskId, null, null, newPriority, null);
+                    System.out.println("✓ Task priority updated.");
                     break;
                 case 4:
                     System.out.print("Enter new task due date (YYYY-MM-DD): ");
                     String dueDateInput = scanner.nextLine();
                     try {
-                        task.setDuedate(LocalDate.parse(dueDateInput));
+                        LocalDate newDueDate = LocalDate.parse(dueDateInput);
+                        taskService.updateTask(taskId, null, null, null, newDueDate);
+                        System.out.println("✓ Task due date updated.");
                     } catch (DateTimeParseException e) {
                         System.out.println("Invalid date format. Due date will not be updated.");
                     }
                     break;
                 case 5:
-                    System.out.print("Enter new task status (open, in progress, completed): ");
-                    task.setStatus(scanner.nextLine());
-                    break;  
+                    // Mark as completed using TaskService (records activity)
+                    if (taskService.completeTask(taskId)) {
+                        System.out.println("✓ Task marked as completed.");
+                    } else {
+                        System.out.println("✗ Could not complete task. It may already be completed or cancelled.");
+                    }
+                    break;
                 case 6:
-                    System.out.println("[Edit associated project] - functionality to be implemented.");
+                    // Mark as cancelled using TaskService (records activity)
+                    if (taskService.cancelTask(taskId)) {
+                        System.out.println("✓ Task marked as cancelled.");
+                    } else {
+                        System.out.println("✗ Could not cancel task. It may already be completed or cancelled.");
+                    }
                     break;
                 case 7:
                     System.out.println("[Edit tags] - functionality to be implemented.");
                     break;  
             
                 default:
+                    System.out.println("Invalid choice.");
                     break;
             }
 
@@ -209,7 +246,25 @@ public class TaskManagementCLI {
     }
 
     private void viewTaskHistory() {
-        System.out.println("[History of task-related activities] - functionality to be implemented.");
+        if (tasks.isEmpty()) {
+            System.out.println("No tasks available.");
+            return;
+        }
+        
+        System.out.println("Select a task to view its activity history:");
+        for (int i = 0; i < tasks.size(); i++) {
+            Task t = tasks.get(i);
+            System.out.println((i + 1) + ". [ID:" + t.getId() + "] " + t.getTitle() + " (" + t.getStatus() + ")");
+        }
+        
+        int taskNumber = readInt("Enter task number: ");
+        if (taskNumber >= 1 && taskNumber <= tasks.size()) {
+            Task task = tasks.get(taskNumber - 1);
+            // Use TaskService to print the activity history
+            taskService.printTaskActivityHistory(task.getId());
+        } else {
+            System.out.println("Invalid task number.");
+        }
     }
 
     public ArrayList<Task> getTasks() {
