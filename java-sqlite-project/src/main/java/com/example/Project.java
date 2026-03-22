@@ -5,6 +5,7 @@ public class Project {
     private String title; 
     private String description; 
     private ArrayList<Task> tasks = new ArrayList<>();
+    private ArrayList<Collaborator> collaborators = new ArrayList<>();
 
     public String getTitle() {
         return title; 
@@ -29,6 +30,28 @@ public class Project {
     }
     public void setTasks(ArrayList<Task> tasks) {
         this.tasks = tasks;
+    }
+
+    public ArrayList<Collaborator> getCollaborators() {
+        return collaborators;
+    }
+
+    public void setCollaborators(ArrayList<Collaborator> collaborators) {
+        this.collaborators = collaborators;
+    }
+
+    public void addCollaborator(Collaborator collaborator) {
+        this.collaborators.add(collaborator);
+    }
+
+    public Collaborator getCollaboratorByName(String name) {
+        if (name == null) return null;
+        for (Collaborator c : collaborators) {
+            if (name.equalsIgnoreCase(c.getName())) {
+                return c;
+            }
+        }
+        return null;
     }
 
     public void addTask(Task t) {

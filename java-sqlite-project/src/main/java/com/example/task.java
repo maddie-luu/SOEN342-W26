@@ -10,6 +10,15 @@ public class Task {
     private String status = "open"; 
     private ArrayList<String> tags = new ArrayList<>();
     private LocalDate duedate; 
+    private String collaborator;
+    private String collaboratorCategory;
+
+    //recurrence properties
+    private String recurrenceType; //"none", "daily", "weekly", "monthly"
+    private int recurrenceInterval = 1; //gap between occurrences
+    private ArrayList<String> recurrenceWeekdays = new ArrayList<>(); //for weekly recurrence
+    private LocalDate recurrenceStart;
+    private LocalDate recurrenceEnd;
 
     public String getTitle() {
         return title;
@@ -76,6 +85,62 @@ public class Task {
         this.duedate = duedate;
     }
 
+    public String getCollaborator() {
+        return collaborator;
+    }
+
+    public void setCollaborator(String collaborator) {
+        this.collaborator = collaborator;
+    }
+
+    public String getCollaboratorCategory() {
+        return collaboratorCategory;
+    }
+
+    public void setCollaboratorCategory(String collaboratorCategory) {
+        this.collaboratorCategory = collaboratorCategory;
+    }
+
+    public String getRecurrenceType() {
+        return recurrenceType;
+    }
+
+    public void setRecurrenceType(String recurrenceType) {
+        this.recurrenceType = recurrenceType;
+    }
+
+    public int getRecurrenceInterval() {
+        return recurrenceInterval;
+    }
+
+    public void setRecurrenceInterval(int recurrenceInterval) {
+        this.recurrenceInterval = recurrenceInterval;
+    }
+
+    public ArrayList<String> getRecurrenceWeekdays() {
+        return recurrenceWeekdays;
+    }
+
+    public void setRecurrenceWeekdays(ArrayList<String> recurrenceWeekdays) {
+        this.recurrenceWeekdays = recurrenceWeekdays;
+    }
+
+    public LocalDate getRecurrenceStart() {
+        return recurrenceStart;
+    }
+
+    public void setRecurrenceStart(LocalDate recurrenceStart) {
+        this.recurrenceStart = recurrenceStart;
+    }
+
+    public LocalDate getRecurrenceEnd() {
+        return recurrenceEnd;
+    }
+
+    public void setRecurrenceEnd(LocalDate recurrenceEnd) {
+        this.recurrenceEnd = recurrenceEnd;
+    }
+
     //Default constructor to create an empty task object.
     public Task() {
     }
@@ -98,6 +163,9 @@ public class Task {
              + "Priority: " + priorityLevel + "\n"
              + "Due Date: " + duedate + "\n"
              + "Status: " + status + "\n"
+             + "Collaborator: " + collaborator + "\n"
+             + "Collaborator Category: " + collaboratorCategory + "\n"
+             + "Recurrence: " + recurrenceType + " (interval=" + recurrenceInterval + ", start=" + recurrenceStart + ", end=" + recurrenceEnd + ")\n"
              + "-----------------------------\n";
     }
 }
