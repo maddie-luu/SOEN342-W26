@@ -1,8 +1,15 @@
 package com.example;
 import java.time.*; 
 import java.util.ArrayList;
+import java.util.List;
 
 public class Task {
+    // Unique identifier for the task
+    private int id;
+    
+    // Static counter to generate unique IDs
+    private static int idCounter = 1;
+    
     private String title; 
     private String description;
     private LocalDate createdDate = LocalDate.now();
@@ -10,6 +17,13 @@ public class Task {
     private String status = "open"; 
     private ArrayList<String> tags = new ArrayList<>();
     private LocalDate duedate; 
+
+    // Activity history for this task - records all actions performed on this task
+    private ArrayList<ActivityEntry> activityHistory = new ArrayList<>();
+
+    public int getId() {
+        return id;
+    }
 
     public String getTitle() {
         return title;
@@ -76,11 +90,32 @@ public class Task {
         this.duedate = duedate;
     }
 
-    //Default constructor to create an empty task object.
-    public Task() {
+    /**
+     * Gets the activity history for this task.
+     * @return List of activity entries (unmodifiable view)
+     */
+    public List<ActivityEntry> getActivityHistory() {
+        return new ArrayList<>(activityHistory);
     }
-    // Constructor with paramters to initialize the task object with the provided values. Description and due date are optional. 
+
+    /**
+     * Adds an activity entry to this task's history.
+     * Package-private to ensure only TaskService can add entries.
+     * 
+     * @param entry The activity entry to add
+     */
+    void addActivityEntry(ActivityEntry entry) {
+        this.activityHistory.add(entry);
+    }
+
+    //Default constructor to create an empty task object with auto-generated ID.
+    public Task() {
+        this.id = idCounter++;
+    }
+    
+    // Constructor with parameters to initialize the task object with the provided values.
     public Task(String title, String description, String priorityLevel, LocalDate duedate) {
+        this.id = idCounter++;
         this.title = title;
         this.description = description;
         this.priorityLevel = priorityLevel;
@@ -93,7 +128,8 @@ public class Task {
 
     @Override
     public String toString() {
-        return "Title: " + title + "\n"
+        return "Task #" + id + "\n"
+             + "Title: " + title + "\n"
              + "Description: " + description + "\n"
              + "Priority: " + priorityLevel + "\n"
              + "Due Date: " + duedate + "\n"
