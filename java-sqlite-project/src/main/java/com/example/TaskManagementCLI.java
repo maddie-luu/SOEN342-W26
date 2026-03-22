@@ -4,6 +4,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.InputMismatchException;
+import java.util.List;
 import java.util.Scanner;
 
 /**
@@ -16,9 +17,14 @@ public class TaskManagementCLI {
     private final Scanner scanner;
     public final ArrayList<Task> tasks = new ArrayList<>();    
     public final ArrayList<Project> projects = new ArrayList<>();
+    
+    // TaskService handles search and other task-related business logic
+    private final TaskService taskService;
 
     public TaskManagementCLI() {
         this.scanner = new Scanner(System.in);
+        // Initialize TaskService with reference to the tasks list
+        this.taskService = new TaskService(tasks);
     }
 
     public void run() {
@@ -205,7 +211,66 @@ public class TaskManagementCLI {
     }
 
     private void searchTasks() {
-        System.out.println("[Search tasks] - functionality to be implemented.");
+        System.out.print("Enter search keyword (or press Enter to see all open tasks): ");
+        String keyword = scanner.nextLine();
+
+        // Use TaskService to perform the search
+        List<Task> results = taskService.searchTasks(keyword);
+
+        // Display search results
+        if (results.isEmpty()) {
+            if (keyword == null || keyword.trim().isEmpty()) {
+                System.out.println("No open tasks found.");
+            } else {
+                System.out.println("No tasks found matching: \"" + keyword + "\"");
+            }
+        } else {
+            // Show result count and header
+            if (keyword == null || keyword.trim().isEmpty()) {
+                System.out.println("\n=== All Open Tasks (sorted by due date) ===");
+            } else {
+                System.out.println("\n=== Search Results for: \"" + keyword + "\" ===");
+            }
+            System.out.println("Found " + results.size() + " task(s):\n");
+
+            // Display each matching task
+            for (int i = 0; i < results.size(); i++) {
+                Task t = results.get(i);
+                System.out.println((i + 1) + ". " + t.toString());
+            }
+
+            // Offer CSV export option after displaying results
+            offerCSVExport(results);
+        }
+    }
+
+    /**
+     * Offers the user the option to export search results to a CSV file.
+     * Called after search results are displayed.
+     * 
+     * @param tasks The list of tasks to potentially export
+     */
+    private void offerCSVExport(List<Task> tasks) {
+        System.out.print("Would you like to export these results to CSV? (y/n): ");
+        String response = scanner.nextLine().trim().toLowerCase();
+
+        if (response.equals("y") || response.equals("yes")) {
+            System.out.print("Enter file path (e.g., tasks_export.csv): ");
+            String filePath = scanner.nextLine().trim();
+
+            // Default filename if user presses enter without input
+            if (filePath.isEmpty()) {
+                filePath = "tasks_export.csv";
+            }
+
+            // Attempt to export to CSV
+            try {
+                CSVExporter.exportTasksToCSV(tasks, filePath);
+                System.out.println("✓ Successfully exported " + tasks.size() + " task(s) to: " + filePath);
+            } catch (java.io.IOException e) {
+                System.out.println("✗ Error exporting to CSV: " + e.getMessage());
+            }
+        }
     }
 
     private void viewTaskHistory() {

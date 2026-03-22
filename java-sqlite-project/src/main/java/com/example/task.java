@@ -10,6 +10,12 @@ public class Task {
     private String status = "open"; 
     private ArrayList<String> tags = new ArrayList<>();
     private LocalDate duedate; 
+    
+    // Project associated with this task (optional)
+    private Project project;
+    
+    // Collaborator assigned to this task (optional)
+    private Collaborator collaborator;
 
     public String getTitle() {
         return title;
@@ -74,6 +80,24 @@ public class Task {
 
     public void setDuedate(LocalDate duedate) {
         this.duedate = duedate;
+    }
+
+    // Getter and setter for project
+    public Project getProject() {
+        return project;
+    }
+
+    public void setProject(Project project) {
+        this.project = project;
+    }
+
+    // Getter and setter for collaborator
+    public Collaborator getCollaborator() {
+        return collaborator;
+    }
+
+    public void setCollaborator(Collaborator collaborator) {
+        this.collaborator = collaborator;
     }
 
     //Default constructor to create an empty task object.
