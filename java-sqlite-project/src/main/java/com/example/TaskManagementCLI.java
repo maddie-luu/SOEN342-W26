@@ -2,8 +2,6 @@ package com.example;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
-import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDate;
@@ -25,7 +23,7 @@ public class TaskManagementCLI {
     private final Scanner scanner;
     public final ArrayList<Task> tasks = new ArrayList<>();    
     public final ArrayList<Project> projects = new ArrayList<>();
-    private final ArrayList<String> activityHistory = new ArrayList<>();
+    private final ArrayList<ActivityEntry> activityHistory = new ArrayList<>();
 
     public TaskManagementCLI() {
         this.scanner = new Scanner(System.in);
@@ -141,6 +139,17 @@ public class TaskManagementCLI {
             System.out.print("Enter project description (optional): ");
             projectDescription = scanner.nextLine().trim();
             project = getOrCreateProject(projectName, projectDescription);
+        }
+
+        System.out.print("Enter task tags (comma-separated, optional): ");
+        String tagsInput = scanner.nextLine().trim();
+        if (!tagsInput.isEmpty()) {
+            for (String tagName : tagsInput.split(",")) {
+                tagName = tagName.trim();
+                if (!tagName.isEmpty()) {
+                    newTask.addTag(new Tag(tagName));
+                }
+            }
         }
 
         System.out.print("Assign collaborator (name) (optional): ");
@@ -581,11 +590,11 @@ public class TaskManagementCLI {
                     break;
                 case 5:
                     ArrayList<Task> sortedByTags = new ArrayList<>(tasks);
-                    sortedByTags.sort(Comparator.comparing(task -> String.join(", ", task.getTags()),
-                            Comparator.nullsLast(String::compareTo)));
+                    sortedByTags.sort(Comparator.comparing(Task::getTagsAsString,
+                            Comparator.nullsLast(Comparator.naturalOrder())));
                     for (Task t : sortedByTags) {
                         System.out.println("Task: " + t.getTitle());
-                        System.out.println("Tags: " + String.join(", ", t.getTags()));
+                        System.out.println("Tags: " + t.getTagsAsString());
                     }
                     break;
                 case 6:
@@ -720,14 +729,14 @@ public class TaskManagementCLI {
             return;
         }
         System.out.println("Task activity history:");
-        for (String entry : activityHistory) {
-            System.out.println(entry);
+        for (ActivityEntry entry : activityHistory) {
+            System.out.println(entry.toString());
         }
     }
 
     private void logActivity(String description) {
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        activityHistory.add(timestamp + " - " + description);
+        ActivityEntry entry = new ActivityEntry(LocalDateTime.now(), description);
+        activityHistory.add(entry);
     }
 
     private boolean isTaskNameDueDateUnique(String title, LocalDate dueDate) {

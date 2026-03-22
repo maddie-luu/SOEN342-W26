@@ -8,7 +8,7 @@ public class Task {
     private LocalDate createdDate = LocalDate.now();
     private String priorityLevel; 
     private String status = "open"; 
-    private ArrayList<String> tags = new ArrayList<>();
+    private ArrayList<Tag> tags = new ArrayList<>();
     private LocalDate duedate; 
     private String collaborator;
     private String collaboratorCategory;
@@ -69,12 +69,30 @@ public class Task {
         this.subtask = subtask;
     }
 
-    public ArrayList<String> getTags() {
+    public ArrayList<Tag> getTags() {
         return tags;
     }
 
-    public void setTags(ArrayList<String> tags) {
+    public void setTags(ArrayList<Tag> tags) {
         this.tags = tags;
+    }
+
+    public void addTag(Tag tag) {
+        this.tags.add(tag);
+    }
+
+    public String getTagsAsString() {
+        if (tags == null || tags.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Tag tag : tags) {
+            if (sb.length() > 0) {
+                sb.append(", ");
+            }
+            sb.append(tag.getName());
+        }
+        return sb.toString();
     }
     
     public LocalDate getDuedate() {
@@ -161,6 +179,7 @@ public class Task {
         return "Title: " + title + "\n"
              + "Description: " + description + "\n"
              + "Priority: " + priorityLevel + "\n"
+             + "Tags: " + getTagsAsString() + "\n"
              + "Due Date: " + duedate + "\n"
              + "Status: " + status + "\n"
              + "Collaborator: " + collaborator + "\n"
