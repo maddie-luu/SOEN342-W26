@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
@@ -24,10 +25,12 @@ public class TaskManagementCLI {
     public final ArrayList<Project> projects = new ArrayList<>();
     private final ArrayList<ActivityEntry> activityHistory = new ArrayList<>();
     private final CollaboratorService collaboratorService;
+    private final TaskExportGateway taskExportGateway;
 
     public TaskManagementCLI() {
         this.scanner = new Scanner(System.in);
         this.collaboratorService = new CollaboratorService(tasks);
+        this.taskExportGateway = new ICalTaskExporter();
     }
 
     public void run() {
@@ -69,6 +72,9 @@ public class TaskManagementCLI {
                     viewOverloadedCollaborators();
                     break;
                 case 11:
+                    exportSingleTaskToICal();
+                    break;
+                case 12:
                     System.out.println("Exiting application. Goodbye!");
                     exitRequested = true;
                     break;
@@ -94,7 +100,8 @@ public class TaskManagementCLI {
         System.out.println("8. History of task-related activities");
         System.out.println("9. Import tasks from CSV");
         System.out.println("10. View overloaded collaborators");
-        System.out.println("11. Exit");
+        System.out.println("11. Export single task to iCal (.ics)");
+        System.out.println("12. Exit");
         System.out.println();
     }
 
@@ -828,6 +835,54 @@ public class TaskManagementCLI {
         }
     }
 
+    private void exportSingleTaskToICal() {
+        List<Task> exportableTasks = new ArrayList<>();
+        for (Task task : tasks) {
+            if (task.getDuedate() != null) {
+                exportableTasks.add(task);
+            }
+        }
+
+        if (exportableTasks.isEmpty()) {
+            System.out.println("No tasks with due dates are available for iCal export.");
+            return;
+        }
+
+        exportableTasks.sort(Comparator.comparing(Task::getDuedate));
+        System.out.println("Tasks available for iCal export:");
+        for (int i = 0; i < exportableTasks.size(); i++) {
+            Task task = exportableTasks.get(i);
+            Project project = findProjectForTask(task);
+            String projectName = project == null ? "No project" : project.getTitle();
+            System.out.println((i + 1) + ". " + task.getTitle() + " | Due: " + task.getDuedate() + " | Project: " + projectName);
+        }
+
+        int selection = readInt("Select task number to export: ");
+        if (selection < 1 || selection > exportableTasks.size()) {
+            System.out.println("Invalid task number.");
+            return;
+        }
+
+        Task selectedTask = exportableTasks.get(selection - 1);
+        Project project = findProjectForTask(selectedTask);
+        String defaultName = (selectedTask.getTitle() == null || selectedTask.getTitle().trim().isEmpty())
+                ? "task.ics"
+                : selectedTask.getTitle().trim().replaceAll("[^a-zA-Z0-9-_]+", "_") + ".ics";
+        System.out.print("Enter output .ics file path (leave blank for " + defaultName + "): ");
+        String outputPathInput = scanner.nextLine().trim();
+
+        try {
+            String exportedPath = taskExportGateway.exportTask(selectedTask, project, outputPathInput);
+            String absolutePath = Paths.get(exportedPath).toAbsolutePath().toString();
+            System.out.println("Task exported successfully to: " + absolutePath);
+            logActivity("Exported task '" + selectedTask.getTitle() + "' to iCal file: " + absolutePath);
+        } catch (IllegalArgumentException e) {
+            System.out.println("Task export failed: " + e.getMessage());
+        } catch (IOException e) {
+            System.out.println("Failed to write iCal file: " + e.getMessage());
+        }
+    }
+
     private String csvEscape(String value) {
         if (value == null) {
             return "";
@@ -1041,4 +1096,3 @@ public class TaskManagementCLI {
         return sb.toString();
     }
 }
-
