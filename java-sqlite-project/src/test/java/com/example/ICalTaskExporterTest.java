@@ -83,4 +83,49 @@ public class ICalTaskExporterTest {
         assertTrue("Exporter should append .ics when missing", exportedFilePath.endsWith(".ics"));
         assertTrue("Exported file should exist", Files.exists(Path.of(exportedFilePath)));
     }
+
+    @Test
+    public void exportProjectTasks_exportsOnlyTasksWithDueDate() throws IOException {
+        ICalTaskExporter exporter = new ICalTaskExporter();
+        Project project = new Project("Alpha Project", "Testing project export");
+
+        Task dueTaskOne = new Task();
+        dueTaskOne.setTitle("Task One");
+        dueTaskOne.setDescription("First due task");
+        dueTaskOne.setDuedate(LocalDate.of(2026, 6, 1));
+        dueTaskOne.setStatus("open");
+        dueTaskOne.setPriorityLevel("medium");
+        dueTaskOne.addSubtask(new Subtask("Sub 1", "details"));
+        project.addTask(dueTaskOne);
+
+        Task noDueTask = new Task();
+        noDueTask.setTitle("Task No Date");
+        noDueTask.setDescription("Should be skipped");
+        noDueTask.setStatus("open");
+        noDueTask.setPriorityLevel("high");
+        project.addTask(noDueTask);
+
+        Task dueTaskTwo = new Task();
+        dueTaskTwo.setTitle("Task Two");
+        dueTaskTwo.setDescription("Second due task");
+        dueTaskTwo.setDuedate(LocalDate.of(2026, 6, 15));
+        dueTaskTwo.setStatus("completed");
+        dueTaskTwo.setPriorityLevel("low");
+        project.addTask(dueTaskTwo);
+
+        Path tempDir = Files.createTempDirectory("ical-export-project-test");
+        String outputPath = tempDir.resolve("project-export").toString();
+        String exportedFilePath = exporter.exportProjectTasks(project, outputPath);
+
+        String content = Files.readString(Path.of(exportedFilePath), StandardCharsets.UTF_8);
+        assertTrue("Exporter should append .ics when missing", exportedFilePath.endsWith(".ics"));
+        assertTrue(content.contains("SUMMARY:Task One"));
+        assertTrue(content.contains("SUMMARY:Task Two"));
+        assertTrue(!content.contains("SUMMARY:Task No Date"));
+        assertTrue(content.contains("DUE;VALUE=DATE:20260601"));
+        assertTrue(content.contains("DUE;VALUE=DATE:20260615"));
+        assertTrue(content.contains("CATEGORIES:Alpha Project"));
+        assertTrue(content.contains("X-PROJECT-NAME:Alpha Project"));
+        assertTrue(content.contains("Subtasks:"));
+    }
 }

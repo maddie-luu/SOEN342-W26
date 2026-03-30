@@ -75,6 +75,9 @@ public class TaskManagementCLI {
                     exportSingleTaskToICal();
                     break;
                 case 12:
+                    exportProjectTasksToICal();
+                    break;
+                case 13:
                     System.out.println("Exiting application. Goodbye!");
                     exitRequested = true;
                     break;
@@ -101,7 +104,8 @@ public class TaskManagementCLI {
         System.out.println("9. Import tasks from CSV");
         System.out.println("10. View overloaded collaborators");
         System.out.println("11. Export single task to iCal (.ics)");
-        System.out.println("12. Exit");
+        System.out.println("12. Export project tasks to iCal (.ics)");
+        System.out.println("13. Exit");
         System.out.println();
     }
 
@@ -878,6 +882,61 @@ public class TaskManagementCLI {
             logActivity("Exported task '" + selectedTask.getTitle() + "' to iCal file: " + absolutePath);
         } catch (IllegalArgumentException e) {
             System.out.println("Task export failed: " + e.getMessage());
+        } catch (IOException e) {
+            System.out.println("Failed to write iCal file: " + e.getMessage());
+        }
+    }
+
+    private void exportProjectTasksToICal() {
+        if (projects.isEmpty()) {
+            System.out.println("No projects available for export.");
+            return;
+        }
+
+        System.out.println("Projects available for iCal export:");
+        for (int i = 0; i < projects.size(); i++) {
+            Project project = projects.get(i);
+            System.out.println((i + 1) + ". " + project.getTitle());
+        }
+
+        int selection = readInt("Select project number to export: ");
+        if (selection < 1 || selection > projects.size()) {
+            System.out.println("Invalid project number.");
+            return;
+        }
+
+        Project selectedProject = projects.get(selection - 1);
+        int exportedCount = 0;
+        int skippedCount = 0;
+
+        for (Task task : selectedProject.getTasks()) {
+            if (task == null || task.getDuedate() == null) {
+                skippedCount++;
+            } else {
+                exportedCount++;
+            }
+        }
+
+        if (exportedCount == 0) {
+            System.out.println("No due-dated tasks found in this project. Export skipped. Skipped tasks: " + skippedCount);
+            return;
+        }
+
+        String defaultName = (selectedProject.getTitle() == null || selectedProject.getTitle().trim().isEmpty())
+                ? "project_tasks.ics"
+                : selectedProject.getTitle().trim().replaceAll("[^a-zA-Z0-9-_]+", "_") + "_tasks.ics";
+        System.out.print("Enter output .ics file path (leave blank for " + defaultName + "): ");
+        String outputPathInput = scanner.nextLine().trim();
+
+        try {
+            String exportedPath = taskExportGateway.exportProjectTasks(selectedProject, outputPathInput);
+            String absolutePath = Paths.get(exportedPath).toAbsolutePath().toString();
+            System.out.println("Project export successful: " + absolutePath);
+            System.out.println("Tasks exported: " + exportedCount + " | Tasks skipped (no due date): " + skippedCount);
+            logActivity("Exported project '" + selectedProject.getTitle() + "' to iCal file: " + absolutePath
+                    + " (exported=" + exportedCount + ", skipped=" + skippedCount + ")");
+        } catch (IllegalArgumentException e) {
+            System.out.println("Project export failed: " + e.getMessage());
         } catch (IOException e) {
             System.out.println("Failed to write iCal file: " + e.getMessage());
         }
