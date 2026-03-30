@@ -6,7 +6,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -24,9 +23,11 @@ public class TaskManagementCLI {
     public final ArrayList<Task> tasks = new ArrayList<>();    
     public final ArrayList<Project> projects = new ArrayList<>();
     private final ArrayList<ActivityEntry> activityHistory = new ArrayList<>();
+    private final CollaboratorService collaboratorService;
 
     public TaskManagementCLI() {
         this.scanner = new Scanner(System.in);
+        this.collaboratorService = new CollaboratorService(tasks);
     }
 
     public void run() {
@@ -65,6 +66,9 @@ public class TaskManagementCLI {
                     importTasksFromCSV();
                     break;
                 case 10:
+                    viewOverloadedCollaborators();
+                    break;
+                case 11:
                     System.out.println("Exiting application. Goodbye!");
                     exitRequested = true;
                     break;
@@ -89,7 +93,8 @@ public class TaskManagementCLI {
         System.out.println("7. Search tasks");
         System.out.println("8. History of task-related activities");
         System.out.println("9. Import tasks from CSV");
-        System.out.println("10. Exit");
+        System.out.println("10. View overloaded collaborators");
+        System.out.println("11. Exit");
         System.out.println();
     }
 
@@ -975,6 +980,47 @@ public class TaskManagementCLI {
         fields.add(current.toString());
 
         return fields.toArray(new String[0]);
+    }
+
+    private void viewOverloadedCollaborators() {
+        System.out.println("=============================");
+        System.out.println("   Overloaded Collaborators  ");
+        System.out.println("=============================");
+        List<Collaborator> allCollaborators = new ArrayList<>();
+        for (Project project : projects) {
+            for (Collaborator c : project.getCollaborators()) {
+                boolean exists = false;
+                for (Collaborator existing : allCollaborators) {
+                    if (existing.getName().equalsIgnoreCase(c.getName())) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists) {
+                    allCollaborators.add(c);
+                }
+            }
+        }
+        if (allCollaborators.isEmpty()) {
+            System.out.println("No collaborators found in any project.");
+            return;
+        }
+        List<Collaborator> overloaded = collaboratorService.getOverloadedCollaborators(allCollaborators);
+        if (overloaded.isEmpty()) {
+            System.out.println("No overloaded collaborators. All workloads are balanced.");
+        } else {
+            System.out.println("The following collaborators are overloaded:");
+            for (Collaborator c : overloaded) {
+                int openTasks = collaboratorService.getOpenTaskCount(c.getName());
+                int limit = c.getOpenTaskLimit();
+                System.out.println("  - " + c.getName() + " (" + c.getCategory() + "): " + openTasks + "/" + limit + " tasks");
+            }
+        }
+        System.out.println("-----------------------------");
+        System.out.println("Collaborator Workload Summary:");
+        for (Collaborator c : allCollaborators) {
+            System.out.println(collaboratorService.getWorkloadStatus(c));
+        }
     }
 
     public ArrayList<Task> getTasks() {
