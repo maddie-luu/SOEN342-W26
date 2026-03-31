@@ -6,7 +6,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -124,6 +123,16 @@ public class TaskManagementCLI {
             newTask.setDuedate(dueDate);
         } catch (DateTimeParseException e) {
             System.out.println("Invalid date format. Task will be created without a due date.");
+        }
+
+        // US-16: Check if we can create an open task without a due date
+        if (dueDate == null) {
+            int openTasksWithoutDueDate = countOpenTasksWithoutDueDate();
+            if (openTasksWithoutDueDate >= 50) {
+                System.out.println("ERROR: Cannot create task. Maximum limit of 50 open tasks without due date has been reached.");
+                System.out.println("Please set a due date or complete some existing open tasks.");
+                return;
+            }
         }
 
         if (dueDate != null && !isTaskNameDueDateUnique(newTask.getTitle(), dueDate)) {
@@ -464,6 +473,7 @@ public class TaskManagementCLI {
             System.out.println("1. Removing Task");
             System.out.println("2. Moving task to another project");
             System.out.println("3. Adding Tasks");
+            System.out.println("4. Manage Collaborator Limits (US-17)");
 
             int editChoice = readInt("Enter your choice: ");
             switch (editChoice) {
@@ -520,7 +530,11 @@ public class TaskManagementCLI {
                     } else {
                         System.out.println("Invalid task number.");
                     }
-                    break;  
+                    break;
+                case 4:
+                    // US-17: Manage collaborator limits
+                    manageCollaboratorLimits(project);
+                    break;
                 default:
                     break;
             }
@@ -979,6 +993,78 @@ public class TaskManagementCLI {
 
     public ArrayList<Task> getTasks() {
         return tasks;
+    }
+
+    /**
+     * US-16: Count open tasks without a due date
+     * These tasks count toward the 50-task limit
+     */
+    private int countOpenTasksWithoutDueDate() {
+        int count = 0;
+        for (Task task : tasks) {
+            if ("open".equalsIgnoreCase(task.getStatus()) && task.getDuedate() == null) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * US-16: Add a due date to an existing open task
+     * This reduces the count of tasks subject to the limit
+     */
+    public void addDueDateToTask(Task task, LocalDate dueDate) {
+        if (task != null && dueDate != null) {
+            task.setDuedate(dueDate);
+        }
+    }
+
+    /**
+     * US-17: Manage collaborator category limits for a project
+     * Allows setting positive integer limits only
+     */
+    private void manageCollaboratorLimits(Project project) {
+        if (project.getCollaborators().isEmpty()) {
+            System.out.println("No collaborators in this project.");
+            return;
+        }
+
+        System.out.println("Project collaborators:");
+        for (int i = 0; i < project.getCollaborators().size(); i++) {
+            Collaborator c = project.getCollaborators().get(i);
+            System.out.println((i + 1) + ". " + c.getName() + " (" + c.getCategory() + ") - Current limit: " + c.getOpenTaskLimit());
+        }
+
+        int collabNumber = readInt("Enter collaborator number to set limit: ");
+        if (collabNumber >= 1 && collabNumber <= project.getCollaborators().size()) {
+            Collaborator collaborator = project.getCollaborators().get(collabNumber - 1);
+            System.out.print("Enter new open task limit (must be positive integer): ");
+            String limitInput = scanner.nextLine().trim();
+            try {
+                setCollaboratorCategoryLimit(collaborator, limitInput);
+            } catch (IllegalArgumentException e) {
+                System.out.println(e.getMessage());
+            }
+        } else {
+            System.out.println("Invalid collaborator number.");
+        }
+    }
+
+    /**
+     * US-17: Validate and set collaborator category limit
+     * Only accepts positive integers
+     */
+    public void setCollaboratorCategoryLimit(Collaborator collaborator, String limitInput) throws IllegalArgumentException {
+        try {
+            int limit = Integer.parseInt(limitInput);
+            if (limit <= 0) {
+                throw new IllegalArgumentException("ERROR: Collaborator category limit must be a positive integer. Got: " + limit);
+            }
+            collaborator.setCustomOpenTaskLimit(limit);
+            System.out.println("Collaborator limit set successfully to: " + limit);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("ERROR: Invalid input. Collaborator category limit must be a positive integer, not: " + limitInput);
+        }
     }
 
     @Override
