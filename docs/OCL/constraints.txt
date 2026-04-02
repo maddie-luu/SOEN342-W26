@@ -1,14 +1,22 @@
 1. “A task cannot have more than 20 sub-tasks.”. 
 
+context Task
+inv: 20Subtasks
+self.subtasks->size() <=20
+
 2. “The number of open tasks without a due date should not exceed 50.” 
+
+context Task
+inv: openTaskWithoutDueDateLimit
+Task.allInstances()->select(t: Task | t.status = "open" and t.dueDate.oclIsUndefined())->size() <=50
 
 3. “The limit for open tasks for each collaborator category is a positive integer.” (i.e. Senior collaborators are limited to 2 open tasks.) 
 
 context Collaborator
-inv openTaskLimitPositive:
+inv: openTaskLimitPositive
     self.getOpenTaskLimit() > 0
 
-inv defaultLimitsByCategory:
+inv: defaultLimitsByCategory
     (self.category.toLower() = 'senior' implies self.getOpenTaskLimit() = 2) and
     (self.category.toLower() = 'intermediate' implies self.getOpenTaskLimit() = 5) and
     (self.category.toLower() = 'junior' implies self.getOpenTaskLimit() = 10)
