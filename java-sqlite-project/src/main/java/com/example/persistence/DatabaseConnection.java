@@ -37,6 +37,12 @@ public class DatabaseConnection {
     public static void initializeDatabase() {
         try (Connection conn = getConnection()) {
             UserDAO.createTableIfNotExists(conn);
+            ProjectDAO.createTableIfNotExists(conn);
+            TaskDAO.createTableIfNotExists(conn);
+            SubtaskDAO.createTableIfNotExists(conn);
+            TagDAO.createTableIfNotExists(conn);
+            CollaboratorDAO.createTableIfNotExists(conn);
+            ActivityDAO.createTableIfNotExists(conn);
             logger.info("Database initialized successfully");
         } catch (SQLException e) {
             logger.error("Failed to initialize database", e);

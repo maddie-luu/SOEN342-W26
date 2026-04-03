@@ -1,8 +1,15 @@
-package com.example;
+package com.example.model;
 import java.time.*; 
 import java.util.ArrayList;
 
+import com.example.model.Tag;
+
+import com.example.model.Subtask;
+
 public class Task {
+    // OCL Constraint: A task cannot have more than 20 subtasks
+    private static final int MAX_SUBTASKS = 20;
+    
     private String title; 
     private String description;
     private LocalDate createdDate = LocalDate.now();
@@ -170,7 +177,12 @@ public class Task {
         this.duedate = duedate;
     }
 
-    public void addSubtask(Subtask subtaskTitle) {
+    public void addSubtask(Subtask subtaskTitle) throws SubtaskLimitExceededException {
+        if (this.subtask.size() >= MAX_SUBTASKS) {
+            throw new SubtaskLimitExceededException(
+                "Cannot add subtask. Task '" + this.title + "' already has " + MAX_SUBTASKS + " subtasks."
+            );
+        }
         this.subtask.add(subtaskTitle);
     }
 

@@ -3,6 +3,9 @@ package com.example;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.example.model.Collaborator;
+import com.example.model.Task;
+
 /**
  * Service class responsible for managing collaborator-related operations.
  * Centralizes the logic for checking collaborator workload and preventing overload.

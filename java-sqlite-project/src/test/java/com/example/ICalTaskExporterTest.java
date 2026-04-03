@@ -2,6 +2,11 @@ package com.example;
 
 import org.junit.Test;
 
+import com.example.gateway.ICalTaskExporter;
+import com.example.model.Project;
+import com.example.model.Subtask;
+import com.example.model.Task;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,8 +27,12 @@ public class ICalTaskExporterTest {
         task.setDuedate(LocalDate.of(2026, 4, 18));
         task.setStatus("in progress");
         task.setPriorityLevel("high");
-        task.addSubtask(new Subtask("Draft agenda", "Create first draft"));
-        task.addSubtask(new Subtask("Share with team", "Send final agenda"));
+        try {
+            task.addSubtask(new Subtask("Draft agenda", "Create first draft"));
+            task.addSubtask(new Subtask("Share with team", "Send final agenda"));
+        } catch (com.example.model.SubtaskLimitExceededException e) {
+            throw new RuntimeException("Test setup failed: " + e.getMessage());
+        }
 
         Project project = new Project("Course Project", "SOEN 342 Iteration III");
         Path tempDir = Files.createTempDirectory("ical-export-test");
@@ -95,7 +104,11 @@ public class ICalTaskExporterTest {
         dueTaskOne.setDuedate(LocalDate.of(2026, 6, 1));
         dueTaskOne.setStatus("open");
         dueTaskOne.setPriorityLevel("medium");
-        dueTaskOne.addSubtask(new Subtask("Sub 1", "details"));
+        try {
+            dueTaskOne.addSubtask(new Subtask("Sub 1", "details"));
+        } catch (com.example.model.SubtaskLimitExceededException e) {
+            throw new RuntimeException("Test setup failed: " + e.getMessage());
+        }
         project.addTask(dueTaskOne);
 
         Task noDueTask = new Task();

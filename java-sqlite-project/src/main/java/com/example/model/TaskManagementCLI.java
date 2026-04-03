@@ -1,4 +1,4 @@
-package com.example;
+package com.example.model;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -10,9 +10,14 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.InputMismatchException;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
+
+import com.example.CollaboratorService;
+import com.example.TaskExportGateway;
 /**
  * Simple command-line interface for task and project management.
  * This is the first step: providing the user menu and
@@ -27,10 +32,10 @@ public class TaskManagementCLI {
     private final CollaboratorService collaboratorService;
     private final TaskExportGateway taskExportGateway;
 
-    public TaskManagementCLI() {
+    public TaskManagementCLI(TaskExportGateway taskExportGateway) {
         this.scanner = new Scanner(System.in);
         this.collaboratorService = new CollaboratorService(tasks);
-        this.taskExportGateway = new ICalTaskExporter();
+        this.taskExportGateway = taskExportGateway;
     }
 
     public void run() {
@@ -78,6 +83,9 @@ public class TaskManagementCLI {
                     exportProjectTasksToICal();
                     break;
                 case 13:
+                    exportFilteredTasksToICal();
+                    break;
+                case 14:
                     System.out.println("Exiting application. Goodbye!");
                     exitRequested = true;
                     break;
@@ -105,7 +113,8 @@ public class TaskManagementCLI {
         System.out.println("10. View overloaded collaborators");
         System.out.println("11. Export single task to iCal (.ics)");
         System.out.println("12. Export project tasks to iCal (.ics)");
-        System.out.println("13. Exit");
+        System.out.println("13. Export filtered tasks to iCal (.ics)");
+        System.out.println("14. Exit");
         System.out.println();
     }
 
@@ -202,7 +211,12 @@ public class TaskManagementCLI {
 
                 // create the linked subtask for collaborator progress
                 Subtask collSubtask = new Subtask("Collaborator: " + collaboratorName, "Assigned collaborator task");
-                newTask.addSubtask(collSubtask);
+                try {
+                    newTask.addSubtask(collSubtask);
+                } catch (SubtaskLimitExceededException e) {
+                    System.out.println("ERROR: " + e.getMessage());
+                    return;
+                }
 
             }
         }
@@ -390,7 +404,12 @@ public class TaskManagementCLI {
             selectedTask.setCollaboratorCategory(collaborator.getCategory());
 
             Subtask collSubtask = new Subtask("Collaborator task: " + collaboratorName, "Assigned collaborator");
-            selectedTask.addSubtask(collSubtask);
+            try {
+                selectedTask.addSubtask(collSubtask);
+            } catch (SubtaskLimitExceededException e) {
+                System.out.println("ERROR: " + e.getMessage());
+                return;
+            }
             logActivity("Assigned collaborator " + collaboratorName + " to task " + selectedTask.getTitle());
         }
 
@@ -957,6 +976,74 @@ public class TaskManagementCLI {
         }
     }
 
+    private void exportFilteredTasksToICal() {
+        if (tasks.isEmpty()) {
+            System.out.println("No tasks available to export.");
+            return;
+        }
+
+        System.out.println("--- Filter Criteria (leave blank to skip) ---");
+        System.out.print("Status (open / in progress / completed): ");
+        String statusFilter = scanner.nextLine().trim().toLowerCase();
+
+        System.out.print("Priority (low / medium / high): ");
+        String priorityFilter = scanner.nextLine().trim().toLowerCase();
+
+        LocalDate startDate = null;
+        LocalDate endDate = null;
+        System.out.print("Due date from (YYYY-MM-DD): ");
+        String startInput = scanner.nextLine().trim();
+        System.out.print("Due date to   (YYYY-MM-DD): ");
+        String endInput = scanner.nextLine().trim();
+        try {
+            if (!startInput.isEmpty()) startDate = LocalDate.parse(startInput);
+            if (!endInput.isEmpty())  endDate   = LocalDate.parse(endInput);
+        } catch (java.time.format.DateTimeParseException e) {
+            System.out.println("Invalid date format; date filter will be ignored.");
+        }
+
+        List<Task> filtered = new ArrayList<>();
+        Map<Task, Project> taskToProject = new HashMap<>();
+
+        for (Task task : tasks) {
+            if (task.getDuedate() == null) continue;
+            if (!statusFilter.isEmpty() && !statusFilter.equalsIgnoreCase(task.getStatus())) continue;
+            if (!priorityFilter.isEmpty() && !priorityFilter.equalsIgnoreCase(task.getPriorityLevel())) continue;
+            if (startDate != null && task.getDuedate().isBefore(startDate)) continue;
+            if (endDate   != null && task.getDuedate().isAfter(endDate))   continue;
+            filtered.add(task);
+            taskToProject.put(task, findProjectForTask(task));
+        }
+
+        if (filtered.isEmpty()) {
+            System.out.println("No tasks match the filter criteria (or none have due dates). Export cancelled.");
+            return;
+        }
+
+        System.out.println(filtered.size() + " task(s) match the filter:");
+        for (Task t : filtered) {
+            Project p = taskToProject.get(t);
+            String projectName = p == null ? "No project" : p.getTitle();
+            System.out.println("  - " + t.getTitle() + " | Due: " + t.getDuedate()
+                    + " | Status: " + t.getStatus() + " | Priority: " + t.getPriorityLevel()
+                    + " | Project: " + projectName);
+        }
+
+        System.out.print("Enter output .ics file path (leave blank for filtered_tasks.ics): ");
+        String outputPath = scanner.nextLine().trim();
+
+        try {
+            String exportedPath = taskExportGateway.exportFilteredTasks(filtered, taskToProject, outputPath);
+            String absolutePath = Paths.get(exportedPath).toAbsolutePath().toString();
+            System.out.println(filtered.size() + " task(s) exported successfully to: " + absolutePath);
+            logActivity("Exported " + filtered.size() + " filtered task(s) to iCal: " + absolutePath);
+        } catch (IllegalArgumentException e) {
+            System.out.println("Export failed: " + e.getMessage());
+        } catch (IOException e) {
+            System.out.println("Failed to write iCal file: " + e.getMessage());
+        }
+    }
+
     private String csvEscape(String value) {
         if (value == null) {
             return "";
@@ -1014,7 +1101,12 @@ public class TaskManagementCLI {
                     for (String subtaskName : subtaskNames) {
                         subtaskName = subtaskName.trim();
                         if (!subtaskName.isEmpty()) {
-                            task.addSubtask(new Subtask(subtaskName, ""));
+                            try {
+                                task.addSubtask(new Subtask(subtaskName, ""));
+                            } catch (SubtaskLimitExceededException e) {
+                                System.out.println("Warning: " + e.getMessage() + " Skipping remaining subtasks for this task.");
+                                break;
+                            }
                         }
                     }
                 }

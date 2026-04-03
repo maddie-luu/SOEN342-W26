@@ -1,20 +1,43 @@
-package com.example;
+package com.example.gateway;
 
 import java.io.IOException;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.ParseException;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+
+import com.example.TaskExportGateway;
+import com.example.model.Project;
+import com.example.model.Subtask;
+import com.example.model.Task;
+
+import net.fortuna.ical4j.data.CalendarOutputter;
+import net.fortuna.ical4j.model.Calendar;
+import net.fortuna.ical4j.model.Date;
+import net.fortuna.ical4j.model.DateTime;
+import net.fortuna.ical4j.model.component.VToDo;
+import net.fortuna.ical4j.model.property.CalScale;
+import net.fortuna.ical4j.model.property.Categories;
+import net.fortuna.ical4j.model.property.Description;
+import net.fortuna.ical4j.model.property.Due;
+import net.fortuna.ical4j.model.property.Priority;
+import net.fortuna.ical4j.model.property.ProdId;
+import net.fortuna.ical4j.model.property.Status;
+import net.fortuna.ical4j.model.property.Summary;
+import net.fortuna.ical4j.model.property.Uid;
+import net.fortuna.ical4j.model.property.Version;
+import net.fortuna.ical4j.model.property.XProperty;
 
 public class ICalTaskExporter implements TaskExportGateway {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.BASIC_ISO_DATE;
-    private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss");
 
     @Override
     public String exportTask(Task task, Project project, String outputFilePath) throws IOException {
@@ -77,40 +100,39 @@ public class ICalTaskExporter implements TaskExportGateway {
     }
 
     private String buildCalendarContent(List<Task> tasks, Project project) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("BEGIN:VCALENDAR\r\n");
-        builder.append("VERSION:2.0\r\n");
-        builder.append("PRODID:-//SOEN342//TaskManagementCLI//EN\r\n");
-        builder.append("CALSCALE:GREGORIAN\r\n");
+        Calendar calendar = new Calendar();
+        calendar.getProperties().add(new ProdId("-//SOEN342//TaskManagementCLI//EN"));
+        calendar.getProperties().add(Version.VERSION_2_0);
+        calendar.getProperties().add(CalScale.GREGORIAN);
 
         if (tasks != null) {
             for (Task task : tasks) {
                 if (task == null || task.getDuedate() == null) {
                     continue;
                 }
-                appendTaskEntry(builder, task, project);
+                calendar.getComponents().add(buildTaskEntry(task, project));
             }
         }
-        builder.append("END:VCALENDAR\r\n");
-        return builder.toString();
+
+        return serializeCalendar(calendar);
     }
 
-    private void appendTaskEntry(StringBuilder builder, Task task, Project project) {
-        builder.append("BEGIN:VTODO\r\n");
-        builder.append("UID:").append(UUID.randomUUID()).append("@taskmanagementcli\r\n");
-        builder.append("DTSTAMP:").append(LocalDateTime.now().format(DATE_TIME_FORMAT)).append("\r\n");
-        builder.append("SUMMARY:").append(escapeICalText(task.getTitle())).append("\r\n");
-        builder.append("DESCRIPTION:").append(buildDescription(task)).append("\r\n");
-        builder.append("DUE;VALUE=DATE:").append(formatDate(task.getDuedate())).append("\r\n");
-        builder.append("STATUS:").append(normalizeStatus(task.getStatus())).append("\r\n");
-        builder.append("PRIORITY:").append(mapPriority(task.getPriorityLevel())).append("\r\n");
+    private VToDo buildTaskEntry(Task task, Project project) {
+        VToDo todo = new VToDo();
+        todo.getProperties().add(new Uid(UUID.randomUUID() + "@taskmanagementcli"));
+        todo.getProperties().add(new Summary(safeText(task.getTitle())));
+        todo.getProperties().add(new Description(buildDescription(task)));
+        todo.getProperties().add(new Due(toICalDate(task.getDuedate())));
+        todo.getProperties().add(new Status(normalizeStatus(task.getStatus())));
+        todo.getProperties().add(new Priority(mapPriority(task.getPriorityLevel())));
 
         String projectName = project == null ? "" : project.getTitle();
         if (projectName != null && !projectName.trim().isEmpty()) {
-            builder.append("CATEGORIES:").append(escapeICalText(projectName)).append("\r\n");
-            builder.append("X-PROJECT-NAME:").append(escapeICalText(projectName)).append("\r\n");
+            todo.getProperties().add(new Categories(projectName));
+            todo.getProperties().add(new XProperty("X-PROJECT-NAME", projectName));
         }
-        builder.append("END:VTODO\r\n");
+
+        return todo;
     }
 
     private List<Task> singleTaskList(Task task) {
@@ -139,7 +161,7 @@ public class ICalTaskExporter implements TaskExportGateway {
             }
         }
 
-        return escapeICalText(description.toString());
+        return description.toString();
     }
 
     private String formatDate(LocalDate date) {
@@ -178,15 +200,58 @@ public class ICalTaskExporter implements TaskExportGateway {
         }
     }
 
-    private String escapeICalText(String value) {
-        if (value == null) {
-            return "";
+    private String safeText(String value) {
+        return value == null ? "" : value;
+    }
+
+    private Date toICalDate(LocalDate localDate) {
+        try {
+            return new Date(formatDate(localDate));
+        } catch (ParseException e) {
+            throw new IllegalStateException("Failed to convert due date to iCalendar date", e);
         }
-        return value
-                .replace("\\", "\\\\")
-                .replace(";", "\\;")
-                .replace(",", "\\,")
-                .replace("\r\n", "\\n")
-                .replace("\n", "\\n");
+    }
+
+    private String serializeCalendar(Calendar calendar) {
+        try (StringWriter writer = new StringWriter()) {
+            CalendarOutputter outputter = new CalendarOutputter(false);
+            outputter.output(calendar, writer);
+            return normalizeSerializedContent(writer.toString());
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to generate iCalendar content", e);
+        }
+    }
+
+    private String normalizeSerializedContent(String content) {
+        // Keep output stable for current CLI/tests while generating content via iCal4j.
+        return content
+                .replace("\r\n ", "")
+                .replace("\n ", "")
+                .replace("\r\n\t", "")
+            .replace("\n\t", "");
+    }
+
+    @Override
+    public String exportFilteredTasks(List<Task> filteredTasks, Map<Task, Project> taskToProject, String outputFilePath) throws IOException {
+        if (filteredTasks == null || filteredTasks.isEmpty()) {
+            throw new IllegalArgumentException("No tasks to export.");
+        }
+
+        Path outputPath = buildOutputPath(outputFilePath, "filtered_tasks", "filtered_tasks");
+
+        Calendar calendar = new Calendar();
+        calendar.getProperties().add(new ProdId("-//SOEN342//TaskManagementCLI//EN"));
+        calendar.getProperties().add(Version.VERSION_2_0);
+        calendar.getProperties().add(CalScale.GREGORIAN);
+
+        for (Task task : filteredTasks) {
+            if (task == null || task.getDuedate() == null) {
+                continue;
+            }
+            Project project = taskToProject == null ? null : taskToProject.get(task);
+            calendar.getComponents().add(buildTaskEntry(task, project));
+        }
+
+        return writeCalendar(outputPath, serializeCalendar(calendar));
     }
 }
