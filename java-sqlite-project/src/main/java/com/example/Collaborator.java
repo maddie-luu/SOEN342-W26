@@ -3,6 +3,8 @@ package com.example;
 public class Collaborator {
     private String name;
     private String category; // Senior, Intermediate, Junior
+    // US-17: Custom limit for collaborator category (must be positive integer)
+    private Integer customOpenTaskLimit = null;
 
     public Collaborator() {}
 
@@ -27,7 +29,30 @@ public class Collaborator {
         this.category = category;
     }
 
+    /**
+     * US-17: Get custom open task limit if set, otherwise return default based on category
+     */
+    public Integer getCustomOpenTaskLimit() {
+        return customOpenTaskLimit;
+    }
+
+    /**
+     * US-17: Set custom open task limit with validation
+     * Only accepts positive integers
+     */
+    public void setCustomOpenTaskLimit(Integer limit) throws IllegalArgumentException {
+        if (limit != null && limit <= 0) {
+            throw new IllegalArgumentException("Collaborator category limit must be a positive integer. Got: " + limit);
+        }
+        this.customOpenTaskLimit = limit;
+    }
+
     public int getOpenTaskLimit() {
+        // If custom limit is set, use it (validated during setCustomOpenTaskLimit)
+        if (customOpenTaskLimit != null) {
+            return customOpenTaskLimit;
+        }
+        
         if (category == null) return Integer.MAX_VALUE;
         switch (category.toLowerCase()) {
             case "junior":
