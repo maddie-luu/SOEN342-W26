@@ -41,6 +41,12 @@ public class Project {
     }
 
     public void addCollaborator(Collaborator collaborator) {
+        if (collaborator == null || collaborator.getName() == null) {
+            return;
+        }
+        if (getCollaboratorByName(collaborator.getName()) != null) {
+            return;
+        }
         this.collaborators.add(collaborator);
     }
 
@@ -55,6 +61,9 @@ public class Project {
     }
 
     public void addTask(Task t) {
+        if (t == null || tasks.contains(t)) {
+            return;
+        }
         tasks.add(t);
     }
 

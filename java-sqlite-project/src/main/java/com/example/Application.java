@@ -1,10 +1,14 @@
 package com.example;
 
 import com.example.gateway.ICalTaskExporter;
+import com.example.model.Task;
 import com.example.model.TaskManagementCLI;
 import com.example.persistence.DatabaseConnection;
+import com.example.persistence.TaskDAO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 /**
  * Main application entry point.
@@ -24,6 +28,15 @@ public class Application {
 
         TaskExportGateway exportGateway = new ICalTaskExporter();
         TaskManagementCLI cli = new TaskManagementCLI(exportGateway);
+
+        try {
+            List<Task> savedTasks = TaskDAO.getAllTasks();
+            cli.tasks.addAll(savedTasks);
+            logger.info("Loaded {} task(s) from database", savedTasks.size());
+        } catch (Exception e) {
+            logger.warn("Could not load tasks from database: {}", e.getMessage());
+        }
+
         cli.run();
     }
 }
