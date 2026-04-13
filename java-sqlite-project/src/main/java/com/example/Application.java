@@ -1,14 +1,14 @@
 package com.example;
 
+import com.example.gateway.ICalTaskExporter;
+import com.example.model.TaskManagementCLI;
 import com.example.persistence.DatabaseConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.SQLException;
-
 /**
  * Main application entry point.
- * For US-1, this starts the command-line menu for the user.
+ * Wires infrastructure dependencies (gateway implementations) into domain logic.
  */
 public class Application {
     private static final Logger logger = LoggerFactory.getLogger(Application.class);
@@ -22,7 +22,8 @@ public class Application {
             logger.error("Failed to initialize database", e);
         }
 
-        TaskManagementCLI cli = new TaskManagementCLI();
+        TaskExportGateway exportGateway = new ICalTaskExporter();
+        TaskManagementCLI cli = new TaskManagementCLI(exportGateway);
         cli.run();
     }
 }
