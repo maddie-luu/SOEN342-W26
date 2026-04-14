@@ -8,7 +8,8 @@ import java.util.Map;
 public class Task {
     // OCL Constraint: A task cannot have more than 20 subtasks
     private static final int MAX_SUBTASKS = 20;
-    
+
+    private int id;
     private String title; 
     private String description;
     private LocalDate createdDate = LocalDate.now();
@@ -27,6 +28,14 @@ public class Task {
     private int recurrenceDayOfMonth = -1; //for monthly recurrence (1-31)
     private LocalDate recurrenceStart;
     private LocalDate recurrenceEnd;
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
 
     public String getTitle() {
         return title;

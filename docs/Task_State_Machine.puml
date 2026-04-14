@@ -1,0 +1,75 @@
+@startuml
+title Task State Machine
+
+left to right direction
+hide empty description
+
+skinparam ranksep 80
+skinparam nodesep 55
+skinparam state {
+	FontSize 14
+}
+
+[*] --> Draft : start createTask()
+
+state Draft {
+	[*] --> ValidateInput
+	ValidateInput --> Reject : [invalid title/date/recurrence input]
+	ValidateInput --> Reject : [duplicate (name, dueDate)]
+	ValidateInput --> Reject : [collaborator constraint violation]
+	ValidateInput --> Reject : [open no-due-date limit reached]
+	ValidateInput --> Accept : [all constraints satisfied]
+
+	Accept --> [*] : persist + logActivity("created")
+	Reject --> [*] : cancel creation
+}
+
+Draft --> Lifecycle : task created
+
+state "Lifecycle" as Lifecycle {
+	[*] --> Open
+
+	state "Open" as Open
+	state "In Progress" as InProgress
+	state "Completed" as Completed
+	state "Cancelled" as Cancelled
+	
+	Open --> InProgress : setStatus("in progress")
+	InProgress --> Open : setStatus("open")
+
+	Open --> Completed : setStatus("completed")
+	InProgress --> Completed : setStatus("completed")
+
+	Open --> Cancelled : setStatus("cancelled")
+	InProgress --> Cancelled : setStatus("cancelled")
+
+	Completed --> Open : setStatus("open")
+	Cancelled --> Open : setStatus("open")
+
+	Open --> Open : update title/description/priority/dueDate
+	Open --> Open : add/change/remove dueDate
+	Open --> Open : add/remove tags
+	Open --> Open : add/update/remove subtasks
+	Open --> Open : assign/move/remove project
+	Open --> Open : assign collaborator
+
+	InProgress --> InProgress : update title/description/priority/dueDate
+	InProgress --> InProgress : add/change/remove dueDate
+	InProgress --> InProgress : add/remove tags
+	InProgress --> InProgress : add/update/remove subtasks
+	InProgress --> InProgress : assign/move/remove project
+	InProgress --> InProgress : assign collaborator
+
+	Completed --> Completed : view/search/export/history
+	Cancelled --> Cancelled : view/search/export/history
+
+	Open --> Open : exportToICal() [dueDate != null]
+	InProgress --> InProgress : exportToICal() [dueDate != null]
+	Completed --> Completed : exportToICal() [dueDate != null]
+	Cancelled --> Cancelled : exportToICal() [dueDate != null]
+
+	Open --> Open : importFromCSV row applied
+	InProgress --> InProgress : importFromCSV row applied
+}
+
+@enduml

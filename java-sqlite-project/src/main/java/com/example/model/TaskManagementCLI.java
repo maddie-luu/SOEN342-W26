@@ -23,6 +23,7 @@ import java.util.Set;
 
 import com.example.CollaboratorService;
 import com.example.TaskExportGateway;
+import com.example.persistence.ActivityDAO;
 import com.example.persistence.TaskDAO;
 /**
  * Simple command-line interface for task and project management.
@@ -157,14 +158,25 @@ public class TaskManagementCLI {
             System.out.println("Invalid date format. Task will be created without a due date.");
         }
 
-        System.out.print("Assign to project (leave blank for none): ");
-        String projectName = scanner.nextLine().trim();
         String projectDescription = "";
         Project project = null;
-        if (!projectName.isEmpty()) {
-            System.out.print("Enter project description (optional): ");
-            projectDescription = scanner.nextLine().trim();
-            project = getOrCreateProject(projectName, projectDescription);
+        if (!projects.isEmpty()) {
+            System.out.println("Assign to project (enter number, or 0 to skip):");
+            for (int i = 0; i < projects.size(); i++) {
+                System.out.println((i + 1) + ". " + projects.get(i).getTitle());
+            }
+            int projectChoice = readInt("Enter choice: ");
+            if (projectChoice >= 1 && projectChoice <= projects.size()) {
+                project = projects.get(projectChoice - 1);
+            }
+        } else {
+            System.out.print("Assign to project (leave blank to skip, or enter a new project name): ");
+            String projectName = scanner.nextLine().trim();
+            if (!projectName.isEmpty()) {
+                System.out.print("Enter project description (optional): ");
+                projectDescription = scanner.nextLine().trim();
+                project = getOrCreateProject(projectName, projectDescription);
+            }
         }
 
         System.out.print("Enter task tags (comma-separated, optional): ");
@@ -320,7 +332,11 @@ public class TaskManagementCLI {
                 System.out.println("Warning: could not save task to database: " + e.getMessage());
             }
             System.out.println("Task created successfully.");
-            logActivity("Created task: '" + newTask.getTitle() + "' with due date " + newTask.getDuedate());
+            persistTaskRelations(newTask);
+            if (project != null && project.getId() > 0) {
+                try { com.example.persistence.ProjectDAO.linkTaskToProject(project.getId(), newTask.getId()); } catch (Exception ignored) {}
+            }
+            logActivity(newTask.getId(), "Task created: '" + newTask.getTitle() + "' with due date " + newTask.getDuedate());
         } else {
             List<Task> occurrences = generateRecurringTasks(newTask);
             for (Task occurrence : occurrences) {
@@ -334,7 +350,13 @@ public class TaskManagementCLI {
                     }
                 }
             }
-            logActivity("Created recurring task: '" + newTask.getTitle() + "' (" + occurrences.size() + " occurrences)");
+            for (Task occurrence : occurrences) {
+                persistTaskRelations(occurrence);
+                if (project != null && project.getId() > 0 && occurrence.getId() > 0) {
+                    try { com.example.persistence.ProjectDAO.linkTaskToProject(project.getId(), occurrence.getId()); } catch (Exception ignored) {}
+                }
+            }
+            logActivity(0, "Created recurring task: '" + newTask.getTitle() + "' (" + occurrences.size() + " occurrences)");
         }
     }
 
@@ -544,7 +566,7 @@ public class TaskManagementCLI {
         }
 
         project.addTask(selectedTask);
-        logActivity("Assigned task " + selectedTask.getTitle() + " to project " + project.getTitle());
+        logActivity(selectedTask.getId(), "Assigned to project '" + project.getTitle() + "'");
         System.out.println("Task assigned successfully.");
     }
 
@@ -572,20 +594,20 @@ public class TaskManagementCLI {
                     String oldTitle = task.getTitle();
                     String newTitle = scanner.nextLine();
                     task.setTitle(newTitle);
-                    logActivity("Updated task title from '" + oldTitle + "' to '" + newTitle + "'");
+                    logActivity(task.getId(), "Task title updated from '" + oldTitle + "' to '" + newTitle + "'");
                     break;
                 case 2:
                     System.out.print("Enter new task description: ");
                     String newDescription = scanner.nextLine();
                     task.setDescription(newDescription);
-                    logActivity("Updated task description for '" + task.getTitle() + "'");
+                    logActivity(task.getId(), "Task description updated");
                     break;
                 case 3:
                     System.out.print("Enter new task priority level (low, medium, high): ");
                     String oldPriority = task.getPriorityLevel();
                     String newPriority = scanner.nextLine();
                     task.setPriorityLevel(newPriority);
-                    logActivity("Updated task priority from '" + oldPriority + "' to '" + newPriority + "' for '" + task.getTitle() + "'");
+                    logActivity(task.getId(), "Priority updated from '" + oldPriority + "' to '" + newPriority + "'");
                     break;
                 case 4:
                     System.out.print("Enter new task due date (YYYY-MM-DD): ");
@@ -594,7 +616,7 @@ public class TaskManagementCLI {
                         LocalDate oldDueDate = task.getDuedate();
                         LocalDate newDueDate = LocalDate.parse(dueDateInput);
                         task.setDuedate(newDueDate);
-                        logActivity("Updated task due date from '" + oldDueDate + "' to '" + newDueDate + "' for '" + task.getTitle() + "'");
+                        logActivity(task.getId(), "Due date updated from '" + oldDueDate + "' to '" + newDueDate + "'");
                     } catch (DateTimeParseException e) {
                         System.out.println("Invalid date format. Due date will not be updated.");
                     }
@@ -604,11 +626,11 @@ public class TaskManagementCLI {
                     String oldStatus = task.getStatus();
                     String newStatus = scanner.nextLine().trim();
                     task.setStatus(newStatus);
-                    logActivity("Updated task status from '" + oldStatus + "' to '" + newStatus + "' for '" + task.getTitle() + "'");
+                    logActivity(task.getId(), "Status updated from '" + oldStatus + "' to '" + newStatus + "'");
                     if ("completed".equalsIgnoreCase(newStatus)) {
-                        logActivity("Task completed: '" + task.getTitle() + "'");
+                        logActivity(task.getId(), "Task completed");
                     } else if ("cancelled".equalsIgnoreCase(newStatus) || "canceled".equalsIgnoreCase(newStatus)) {
-                        logActivity("Task cancelled: '" + task.getTitle() + "'");
+                        logActivity(task.getId(), "Task cancelled");
                     }
                     break;
                 case 6: {
@@ -621,7 +643,7 @@ public class TaskManagementCLI {
                     if (projectEditChoice == 1) {
                         if (currentProject != null) {
                             currentProject.removeTask(task);
-                            logActivity("Removed task '" + task.getTitle() + "' from project '" + currentProject.getTitle() + "'");
+                            logActivity(task.getId(), "Removed from project '" + currentProject.getTitle() + "'");
                             System.out.println("Task removed from project.");
                         } else {
                             System.out.println("Task is not in any project.");
@@ -641,7 +663,7 @@ public class TaskManagementCLI {
                                     currentProject.removeTask(task);
                                 }
                                 newProject.addTask(task);
-                                logActivity("Moved task '" + task.getTitle() + "' to project '" + newProject.getTitle() + "'");
+                                logActivity(task.getId(), "Moved to project '" + newProject.getTitle() + "'");
                                 System.out.println("Task moved to project '" + newProject.getTitle() + "'.");
                             } else {
                                 System.out.println("Invalid project number.");
@@ -661,7 +683,7 @@ public class TaskManagementCLI {
                         String tagName = scanner.nextLine().trim();
                         if (!tagName.isEmpty()) {
                             task.addTag(new Tag(tagName));
-                            logActivity("Added tag '" + tagName + "' to task '" + task.getTitle() + "'");
+                            logActivity(task.getId(), "Tag '" + tagName + "' added");
                             System.out.println("Tag added.");
                         }
                     } else if (tagEditChoice == 2) {
@@ -669,14 +691,14 @@ public class TaskManagementCLI {
                         String tagToRemove = scanner.nextLine().trim();
                         boolean tagRemoved = task.getTags().removeIf(t2 -> t2.getName().equalsIgnoreCase(tagToRemove));
                         if (tagRemoved) {
-                            logActivity("Removed tag '" + tagToRemove + "' from task '" + task.getTitle() + "'");
+                            logActivity(task.getId(), "Tag '" + tagToRemove + "' removed");
                             System.out.println("Tag removed.");
                         } else {
                             System.out.println("Tag '" + tagToRemove + "' not found.");
                         }
                     } else if (tagEditChoice == 3) {
                         task.getTags().clear();
-                        logActivity("Cleared all tags from task '" + task.getTitle() + "'");
+                        logActivity(task.getId(), "All tags cleared");
                         System.out.println("All tags cleared.");
                     }
                     break;
@@ -696,7 +718,11 @@ public class TaskManagementCLI {
     }
 
     private void editProject() {
-        System.out.println("Which projects would you like to edit? (Enter project number)");
+        if (projects.isEmpty()) {
+            System.out.println("No projects available to edit.");
+            return;
+        }
+        System.out.println("Which project would you like to edit?");
         for(Project p : projects) {
             System.out.println((projects.indexOf(p) + 1) + ". " + p.getTitle());
         }
@@ -961,7 +987,7 @@ public class TaskManagementCLI {
             for (Task t : matches) {
                 System.out.println(t.toString());
             }
-            logActivity("Performed search with criteria; result size=" + matches.size());
+            logActivity(0, "Performed search with criteria; result size=" + matches.size());
             System.out.print("Export this search result to CSV? (y/n): ");
             String exportChoice = scanner.nextLine().trim().toLowerCase();
             if (exportChoice.startsWith("y")) {
@@ -971,19 +997,88 @@ public class TaskManagementCLI {
     }
 
     private void viewTaskHistory() {
-        if (activityHistory.isEmpty()) {
-            System.out.println("No task activity history available.");
+        if (tasks.isEmpty()) {
+            System.out.println("No tasks available.");
             return;
         }
-        System.out.println("Task activity history:");
-        for (ActivityEntry entry : activityHistory) {
-            System.out.println(entry.toString());
+        System.out.println("Select a task to view its activity history:");
+        for (int i = 0; i < tasks.size(); i++) {
+            System.out.println((i + 1) + ". " + tasks.get(i).getTitle());
+        }
+        System.out.println("0. View all activity history");
+        int taskNumber = readInt("Enter task number: ");
+
+        try {
+            List<ActivityEntry> history;
+            if (taskNumber == 0) {
+                history = ActivityDAO.getAllActivities();
+                System.out.println("All task activity history:");
+            } else if (taskNumber >= 1 && taskNumber <= tasks.size()) {
+                Task selected = tasks.get(taskNumber - 1);
+                history = ActivityDAO.getActivitiesByTaskId(selected.getId());
+                System.out.println("Activity history for task '" + selected.getTitle() + "':");
+            } else {
+                System.out.println("Invalid task number.");
+                return;
+            }
+            if (history.isEmpty()) {
+                System.out.println("No activity history found.");
+            } else {
+                for (ActivityEntry entry : history) {
+                    System.out.println(entry.toString());
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("Could not retrieve activity history: " + e.getMessage());
         }
     }
 
-    private void logActivity(String description) {
-        ActivityEntry entry = new ActivityEntry(LocalDateTime.now(), description);
+    private void logActivity(int taskId, String description) {
+        ActivityEntry entry = new ActivityEntry(LocalDateTime.now(), taskId, description);
         activityHistory.add(entry);
+        try {
+            ActivityDAO.insertActivity(entry);
+        } catch (Exception e) {
+            // Do not interrupt the user workflow if activity logging fails.
+        }
+    }
+
+    /**
+     * Persists the subtasks, tags, and collaborator entries for a task that already
+     * has a valid database id (> 0).
+     */
+    private void persistTaskRelations(Task task) {
+        if (task.getId() <= 0) return;
+        // Subtasks
+        if (task.getSubtask() != null) {
+            for (com.example.model.Subtask sub : task.getSubtask()) {
+                try {
+                    com.example.persistence.SubtaskDAO.insertSubtask(task.getId(), sub);
+                } catch (Exception e) {
+                    // best-effort
+                }
+            }
+        }
+        // Tags
+        if (task.getTags() != null) {
+            for (Tag tag : task.getTags()) {
+                try {
+                    int tagId = com.example.persistence.TagDAO.getOrCreateTagId(tag.getName());
+                    com.example.persistence.TagDAO.addTagToTask(task.getId(), tagId);
+                } catch (Exception e) {
+                    // best-effort
+                }
+            }
+        }
+        // Collaborators
+        for (Map.Entry<String, String> entry : task.getCollaboratorAssignments().entrySet()) {
+            try {
+                com.example.persistence.CollaboratorDAO.insertCollaborator(
+                        new Collaborator(entry.getKey(), entry.getValue()));
+            } catch (Exception e) {
+                // best-effort
+            }
+        }
     }
 
     private boolean isTaskNameDueDateUnique(String title, LocalDate dueDate) {
@@ -1004,7 +1099,12 @@ public class TaskManagementCLI {
         }
         Project newProject = new Project(projectName, projectDescription);
         projects.add(newProject);
-        logActivity("Created project: '" + projectName + "'");
+        try {
+            com.example.persistence.ProjectDAO.insertProject(newProject);
+        } catch (Exception e) {
+            System.out.println("Warning: could not save project to database: " + e.getMessage());
+        }
+        logActivity(0, "Created project: '" + projectName + "'");
         return newProject;
     }
 
@@ -1073,7 +1173,7 @@ public class TaskManagementCLI {
             }
 
             System.out.println("Search results exported to " + filePath);
-            logActivity("Exported " + tasksToExport.size() + " task(s) to CSV: " + filePath);
+            logActivity(0, "Exported " + tasksToExport.size() + " task(s) to CSV: " + filePath);
         } catch (IOException e) {
             System.out.println("Failed to write CSV file: " + e.getMessage());
         }
@@ -1119,7 +1219,7 @@ public class TaskManagementCLI {
             String exportedPath = taskExportGateway.exportTask(selectedTask, project, outputPathInput);
             String absolutePath = Paths.get(exportedPath).toAbsolutePath().toString();
             System.out.println("Task exported successfully to: " + absolutePath);
-            logActivity("Exported task '" + selectedTask.getTitle() + "' to iCal file: " + absolutePath);
+            logActivity(selectedTask.getId(), "Exported to iCal file: " + absolutePath);
         } catch (IllegalArgumentException e) {
             System.out.println("Task export failed: " + e.getMessage());
         } catch (IOException e) {
@@ -1173,7 +1273,7 @@ public class TaskManagementCLI {
             String absolutePath = Paths.get(exportedPath).toAbsolutePath().toString();
             System.out.println("Project export successful: " + absolutePath);
             System.out.println("Tasks exported: " + exportedCount + " | Tasks skipped (no due date): " + skippedCount);
-            logActivity("Exported project '" + selectedProject.getTitle() + "' to iCal file: " + absolutePath
+            logActivity(0, "Exported project '" + selectedProject.getTitle() + "' to iCal file: " + absolutePath
                     + " (exported=" + exportedCount + ", skipped=" + skippedCount + ")");
         } catch (IllegalArgumentException e) {
             System.out.println("Project export failed: " + e.getMessage());
@@ -1242,7 +1342,7 @@ public class TaskManagementCLI {
             String exportedPath = taskExportGateway.exportFilteredTasks(filtered, taskToProject, outputPath);
             String absolutePath = Paths.get(exportedPath).toAbsolutePath().toString();
             System.out.println(filtered.size() + " task(s) exported successfully to: " + absolutePath);
-            logActivity("Exported " + filtered.size() + " filtered task(s) to iCal: " + absolutePath);
+            logActivity(0, "Exported " + filtered.size() + " filtered task(s) to iCal: " + absolutePath);
         } catch (IllegalArgumentException e) {
             System.out.println("Export failed: " + e.getMessage());
         } catch (IOException e) {
@@ -1340,6 +1440,9 @@ public class TaskManagementCLI {
                     if (project == null) {
                         project = new Project(projectName, projectDescription);
                         projects.add(project);
+                        try {
+                            com.example.persistence.ProjectDAO.insertProject(project);
+                        } catch (Exception ignored) {}
                     }
                 }
 
@@ -1360,6 +1463,9 @@ public class TaskManagementCLI {
                         }
                         coll = new Collaborator(collaboratorName, normalizedCategory);
                         project.addCollaborator(coll);
+                        try {
+                            com.example.persistence.CollaboratorDAO.insertCollaborator(coll);
+                        } catch (Exception ignored) {}
                     }
 
                     int openCount = getOpenTasksCountForCollaborator(collaboratorName);
@@ -1389,12 +1495,21 @@ public class TaskManagementCLI {
                     System.out.println("Warning: could not save task to database: " + e.getMessage());
                 }
 
+                persistTaskRelations(task);
+                if (project != null && project.getId() > 0 && task.getId() > 0) {
+                    try {
+                        com.example.persistence.ProjectDAO.linkTaskToProject(project.getId(), task.getId());
+                    } catch (Exception ignored) {
+                        // Best-effort relation sync for imported rows.
+                    }
+                }
+
                 if (project != null) {
                     project.addTask(task);
                 }
             }
 
-            logActivity("Imported " + addedCount + " task(s) from CSV: " + filePath);
+            logActivity(0, "Imported " + addedCount + " task(s) from CSV: " + filePath);
             System.out.println("Imported " + addedCount + " task(s) from CSV.");
         } catch (IOException e) {
             System.out.println("Failed to read CSV file: " + e.getMessage());
@@ -1451,6 +1566,9 @@ public class TaskManagementCLI {
             }
             collaborator = new Collaborator(collaboratorName, normalizedCategory);
             project.addCollaborator(collaborator);
+            try {
+                com.example.persistence.CollaboratorDAO.insertCollaborator(collaborator);
+            } catch (Exception ignored) {}
         }
 
         if (task.hasCollaborator(collaboratorName)) {
@@ -1473,7 +1591,7 @@ public class TaskManagementCLI {
             return false;
         }
 
-        logActivity("Assigned collaborator " + collaboratorName + " to task " + task.getTitle());
+        logActivity(task.getId(), "Collaborator '" + collaboratorName + "' assigned");
         return true;
     }
 

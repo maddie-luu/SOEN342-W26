@@ -48,6 +48,41 @@ public class TagDAO {
         }
     }
 
+    public static int getOrCreateTagId(String tagName) throws SQLException {
+        String selectSql = "SELECT id FROM " + TABLE_NAME + " WHERE name = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
+            selectStmt.setString(1, tagName);
+            try (ResultSet rs = selectStmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("id");
+                }
+            }
+        }
+        String insertSql = "INSERT OR IGNORE INTO " + TABLE_NAME + " (name) VALUES (?)";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement insertStmt = conn.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS)) {
+            insertStmt.setString(1, tagName);
+            insertStmt.executeUpdate();
+            try (ResultSet keys = insertStmt.getGeneratedKeys()) {
+                if (keys.next()) {
+                    return keys.getInt(1);
+                }
+            }
+        }
+        // Re-fetch in case INSERT OR IGNORE silently skipped due to race
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
+            selectStmt.setString(1, tagName);
+            try (ResultSet rs = selectStmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("id");
+                }
+            }
+        }
+        throw new SQLException("Could not get or create tag: " + tagName);
+    }
+
     public static void addTagToTask(int taskId, int tagId) throws SQLException {
         String sql = "INSERT OR IGNORE INTO " + JUNCTION_TABLE + " (task_id, tag_id) VALUES (?, ?)";
 
