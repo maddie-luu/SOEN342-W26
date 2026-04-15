@@ -2,10 +2,19 @@ package com.example.model;
 import java.util.ArrayList;
 
 public class Project {
+    private int id;
     private String title; 
     private String description; 
     private ArrayList<Task> tasks = new ArrayList<>();
     private ArrayList<Collaborator> collaborators = new ArrayList<>();
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
 
     public String getTitle() {
         return title; 
@@ -41,6 +50,12 @@ public class Project {
     }
 
     public void addCollaborator(Collaborator collaborator) {
+        if (collaborator == null || collaborator.getName() == null) {
+            return;
+        }
+        if (getCollaboratorByName(collaborator.getName()) != null) {
+            return;
+        }
         this.collaborators.add(collaborator);
     }
 
@@ -55,6 +70,9 @@ public class Project {
     }
 
     public void addTask(Task t) {
+        if (t == null || tasks.contains(t)) {
+            return;
+        }
         tasks.add(t);
     }
 

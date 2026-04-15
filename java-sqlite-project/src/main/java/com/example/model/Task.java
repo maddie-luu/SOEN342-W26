@@ -1,15 +1,15 @@
 package com.example.model;
 import java.time.*; 
 import java.util.ArrayList;
-
-import com.example.model.Tag;
-
-import com.example.model.Subtask;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 public class Task {
     // OCL Constraint: A task cannot have more than 20 subtasks
     private static final int MAX_SUBTASKS = 20;
-    
+
+    private int id;
     private String title; 
     private String description;
     private LocalDate createdDate = LocalDate.now();
@@ -19,13 +19,23 @@ public class Task {
     private LocalDate duedate; 
     private String collaborator;
     private String collaboratorCategory;
+    private final LinkedHashMap<String, String> collaboratorAssignments = new LinkedHashMap<>();
 
     //recurrence properties
     private String recurrenceType; //"none", "daily", "weekly", "monthly"
     private int recurrenceInterval = 1; //gap between occurrences
     private ArrayList<String> recurrenceWeekdays = new ArrayList<>(); //for weekly recurrence
+    private int recurrenceDayOfMonth = -1; //for monthly recurrence (1-31)
     private LocalDate recurrenceStart;
     private LocalDate recurrenceEnd;
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
 
     public String getTitle() {
         return title;
@@ -116,6 +126,16 @@ public class Task {
 
     public void setCollaborator(String collaborator) {
         this.collaborator = collaborator;
+        if (collaborator == null || collaborator.trim().isEmpty()) {
+            return;
+        }
+        String existingKey = findCollaboratorKey(collaborator);
+        String category = collaboratorCategory == null ? "" : collaboratorCategory;
+        if (existingKey != null) {
+            collaboratorAssignments.put(existingKey, category);
+        } else {
+            collaboratorAssignments.put(collaborator.trim(), category);
+        }
     }
 
     public String getCollaboratorCategory() {
@@ -124,6 +144,59 @@ public class Task {
 
     public void setCollaboratorCategory(String collaboratorCategory) {
         this.collaboratorCategory = collaboratorCategory;
+        if (collaborator == null || collaborator.trim().isEmpty()) {
+            return;
+        }
+        String existingKey = findCollaboratorKey(collaborator);
+        if (existingKey != null) {
+            collaboratorAssignments.put(existingKey, collaboratorCategory == null ? "" : collaboratorCategory);
+        } else {
+            collaboratorAssignments.put(collaborator.trim(), collaboratorCategory == null ? "" : collaboratorCategory);
+        }
+    }
+
+    public void addCollaboratorAssignment(String collaboratorName, String category) {
+        if (collaboratorName == null || collaboratorName.trim().isEmpty()) {
+            return;
+        }
+        String normalizedName = collaboratorName.trim();
+        String normalizedCategory = category == null ? "" : category.trim();
+        String existingKey = findCollaboratorKey(normalizedName);
+        if (existingKey != null) {
+            collaboratorAssignments.put(existingKey, normalizedCategory);
+        } else {
+            collaboratorAssignments.put(normalizedName, normalizedCategory);
+        }
+
+        if (this.collaborator == null || this.collaborator.trim().isEmpty()) {
+            this.collaborator = normalizedName;
+            this.collaboratorCategory = normalizedCategory;
+        }
+    }
+
+    public boolean hasCollaborator(String collaboratorName) {
+        return findCollaboratorKey(collaboratorName) != null;
+    }
+
+    public Map<String, String> getCollaboratorAssignments() {
+        return Collections.unmodifiableMap(collaboratorAssignments);
+    }
+
+    public String getCollaboratorsAsString() {
+        if (collaboratorAssignments.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> entry : collaboratorAssignments.entrySet()) {
+            if (sb.length() > 0) {
+                sb.append(", ");
+            }
+            sb.append(entry.getKey());
+            if (entry.getValue() != null && !entry.getValue().trim().isEmpty()) {
+                sb.append(" (").append(entry.getValue()).append(")");
+            }
+        }
+        return sb.toString();
     }
 
     public String getRecurrenceType() {
@@ -148,6 +221,14 @@ public class Task {
 
     public void setRecurrenceWeekdays(ArrayList<String> recurrenceWeekdays) {
         this.recurrenceWeekdays = recurrenceWeekdays;
+    }
+
+    public int getRecurrenceDayOfMonth() {
+        return recurrenceDayOfMonth;
+    }
+
+    public void setRecurrenceDayOfMonth(int recurrenceDayOfMonth) {
+        this.recurrenceDayOfMonth = recurrenceDayOfMonth;
     }
 
     public LocalDate getRecurrenceStart() {
@@ -186,6 +267,18 @@ public class Task {
         this.subtask.add(subtaskTitle);
     }
 
+    private String findCollaboratorKey(String collaboratorName) {
+        if (collaboratorName == null) {
+            return null;
+        }
+        for (String key : collaboratorAssignments.keySet()) {
+            if (key.equalsIgnoreCase(collaboratorName.trim())) {
+                return key;
+            }
+        }
+        return null;
+    }
+
     @Override
     public String toString() {
         return "Title: " + title + "\n"
@@ -194,9 +287,8 @@ public class Task {
              + "Tags: " + getTagsAsString() + "\n"
              + "Due Date: " + duedate + "\n"
              + "Status: " + status + "\n"
-             + "Collaborator: " + collaborator + "\n"
-             + "Collaborator Category: " + collaboratorCategory + "\n"
-             + "Recurrence: " + recurrenceType + " (interval=" + recurrenceInterval + ", start=" + recurrenceStart + ", end=" + recurrenceEnd + ")\n"
+             + "Collaborators: " + getCollaboratorsAsString() + "\n"
+             + "Recurrence: " + recurrenceType + " (interval=" + recurrenceInterval + ", monthlyDay=" + recurrenceDayOfMonth + ", start=" + recurrenceStart + ", end=" + recurrenceEnd + ")\n"
              + "-----------------------------\n";
     }
 }

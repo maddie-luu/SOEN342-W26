@@ -40,8 +40,10 @@ public class CollaboratorService {
         }
         int count = 0;
         for (Task task : tasks) {
-            if (collaboratorName.equalsIgnoreCase(task.getCollaborator()) 
-                    && !"completed".equalsIgnoreCase(task.getStatus())) {
+            if (task.hasCollaborator(collaboratorName)
+                    && !"completed".equalsIgnoreCase(task.getStatus())
+                    && !"cancelled".equalsIgnoreCase(task.getStatus())
+                    && !"canceled".equalsIgnoreCase(task.getStatus())) {
                 count++;
             }
         }
@@ -99,8 +101,7 @@ public class CollaboratorService {
         }
 
         // Assignment is allowed - update the task
-        task.setCollaborator(collaborator.getName());
-        task.setCollaboratorCategory(collaborator.getCategory());
+        task.addCollaboratorAssignment(collaborator.getName(), collaborator.getCategory());
 
         String successMessage = String.format(
             "Task '%s' successfully assigned to %s (%s). Open tasks: %d/%d",

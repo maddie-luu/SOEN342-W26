@@ -62,6 +62,11 @@ public class TaskDAO {
             pstmt.setString(12, task.getRecurrenceEnd() != null ? task.getRecurrenceEnd().toString() : null);
 
             pstmt.executeUpdate();
+            try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    task.setId(generatedKeys.getInt(1));
+                }
+            }
             logger.info("Task inserted: {}", task.getTitle());
         }
     }
@@ -134,6 +139,7 @@ public class TaskDAO {
 
     private static Task mapResultSetToTask(ResultSet rs) throws SQLException {
         Task task = new Task();
+        task.setId(rs.getInt("id"));
         task.setTitle(rs.getString("title"));
         task.setDescription(rs.getString("description"));
         task.setCreatedDate(rs.getString("created_date") != null ? LocalDate.parse(rs.getString("created_date")) : null);

@@ -19,23 +19,35 @@ public class ActivityDAO {
     public static void createTableIfNotExists(Connection conn) throws SQLException {
         String sql = "CREATE TABLE IF NOT EXISTS " + TABLE_NAME + " (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "task_id INTEGER," +
                 "timestamp TEXT NOT NULL," +
                 "description TEXT NOT NULL" +
                 ")";
 
         try (Statement stmt = conn.createStatement()) {
             stmt.execute(sql);
+            // Migrate existing tables that predate the task_id column.
+            try {
+                stmt.execute("ALTER TABLE " + TABLE_NAME + " ADD COLUMN task_id INTEGER");
+            } catch (SQLException ignored) {
+                // Column already exists — no action needed.
+            }
             logger.info("Activity history table created or already exists");
         }
     }
 
     public static void insertActivity(ActivityEntry entry) throws SQLException {
-        String sql = "INSERT INTO " + TABLE_NAME + " (timestamp, description) VALUES (?, ?)";
+        String sql = "INSERT INTO " + TABLE_NAME + " (task_id, timestamp, description) VALUES (?, ?, ?)";
 
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
-            pstmt.setString(1, entry.getTimestamp().toString());
-            pstmt.setString(2, entry.getDescription());
+            if (entry.getTaskId() > 0) {
+                pstmt.setInt(1, entry.getTaskId());
+            } else {
+                pstmt.setNull(1, java.sql.Types.INTEGER);
+            }
+            pstmt.setString(2, entry.getTimestamp().toString());
+            pstmt.setString(3, entry.getDescription());
             pstmt.executeUpdate();
             logger.info("Activity inserted: {}", entry.getDescription());
         }
@@ -43,13 +55,29 @@ public class ActivityDAO {
 
     public static List<ActivityEntry> getAllActivities() throws SQLException {
         List<ActivityEntry> activities = new ArrayList<>();
-        String sql = "SELECT * FROM " + TABLE_NAME + " ORDER BY timestamp DESC";
+        String sql = "SELECT * FROM " + TABLE_NAME + " ORDER BY timestamp ASC";
 
         try (Connection conn = DatabaseConnection.getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 activities.add(mapResultSetToActivity(rs));
+            }
+        }
+        return activities;
+    }
+
+    public static List<ActivityEntry> getActivitiesByTaskId(int taskId) throws SQLException {
+        List<ActivityEntry> activities = new ArrayList<>();
+        String sql = "SELECT * FROM " + TABLE_NAME + " WHERE task_id = ? ORDER BY timestamp ASC";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, taskId);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    activities.add(mapResultSetToActivity(rs));
+                }
             }
         }
         return activities;
@@ -69,6 +97,7 @@ public class ActivityDAO {
 
     private static ActivityEntry mapResultSetToActivity(ResultSet rs) throws SQLException {
         LocalDateTime timestamp = LocalDateTime.parse(rs.getString("timestamp"));
-        return new ActivityEntry(timestamp, rs.getString("description"));
+        int taskId = rs.getInt("task_id"); // returns 0 if NULL
+        return new ActivityEntry(timestamp, taskId, rs.getString("description"));
     }
 }

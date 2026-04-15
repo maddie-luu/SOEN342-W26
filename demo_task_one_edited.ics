@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+PRODID:-//SOEN342//TaskManagementCLI//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+BEGIN:VTODO
+DTSTAMP:20260415T025340Z
+UID:649c3ca9-cce4-4d8c-b156-cf4bfa96c5c5@taskmanagementcli
+SUMMARY:demo task one edited
+DESCRIPTION:demo task one\\nSubtasks:\\n- Collaborator: vincent\\n- Collaborator: ahmed
+DUE;VALUE=DATE:20260420
+STATUS:NEEDS-ACTION
+PRIORITY:9
+END:VTODO
+END:VCALENDAR

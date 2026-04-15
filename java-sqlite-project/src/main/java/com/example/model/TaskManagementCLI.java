@@ -5,19 +5,26 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Paths;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.InputMismatchException;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.Set;
 
 import com.example.CollaboratorService;
 import com.example.TaskExportGateway;
+import com.example.persistence.ActivityDAO;
+import com.example.persistence.TaskDAO;
 /**
  * Simple command-line interface for task and project management.
  * This is the first step: providing the user menu and
@@ -151,29 +158,25 @@ public class TaskManagementCLI {
             System.out.println("Invalid date format. Task will be created without a due date.");
         }
 
-        // US-16: Check if we can create an open task without a due date
-        if (dueDate == null) {
-            int openTasksWithoutDueDate = countOpenTasksWithoutDueDate();
-            if (openTasksWithoutDueDate >= 50) {
-                System.out.println("ERROR: Cannot create task. Maximum limit of 50 open tasks without due date has been reached.");
-                System.out.println("Please set a due date or complete some existing open tasks.");
-                return;
-            }
-        }
-
-        if (dueDate != null && !isTaskNameDueDateUnique(newTask.getTitle(), dueDate)) {
-            System.out.println("A task with the same name and due date already exists. Cannot create duplicate.");
-            return;
-        }
-
-        System.out.print("Assign to project (leave blank for none): ");
-        String projectName = scanner.nextLine().trim();
         String projectDescription = "";
         Project project = null;
-        if (!projectName.isEmpty()) {
-            System.out.print("Enter project description (optional): ");
-            projectDescription = scanner.nextLine().trim();
-            project = getOrCreateProject(projectName, projectDescription);
+        if (!projects.isEmpty()) {
+            System.out.println("Assign to project (enter number, or 0 to skip):");
+            for (int i = 0; i < projects.size(); i++) {
+                System.out.println((i + 1) + ". " + projects.get(i).getTitle());
+            }
+            int projectChoice = readInt("Enter choice: ");
+            if (projectChoice >= 1 && projectChoice <= projects.size()) {
+                project = projects.get(projectChoice - 1);
+            }
+        } else {
+            System.out.print("Assign to project (leave blank to skip, or enter a new project name): ");
+            String projectName = scanner.nextLine().trim();
+            if (!projectName.isEmpty()) {
+                System.out.print("Enter project description (optional): ");
+                projectDescription = scanner.nextLine().trim();
+                project = getOrCreateProject(projectName, projectDescription);
+            }
         }
 
         System.out.print("Enter task tags (comma-separated, optional): ");
@@ -187,52 +190,78 @@ public class TaskManagementCLI {
             }
         }
 
-        System.out.print("Assign collaborator (name) (optional): ");
-        String collaboratorName = scanner.nextLine().trim();
-        if (!collaboratorName.isEmpty()) {
-            System.out.print("Collaborator category (Junior/Intermediate/Senior): ");
-            String collaboratorCategory = scanner.nextLine().trim();
-            newTask.setCollaborator(collaboratorName);
-            newTask.setCollaboratorCategory(collaboratorCategory);
+        System.out.print("Assign external collaborator(s) (comma-separated names, optional): ");
+        String collaboratorInput = scanner.nextLine().trim();
+        if (!collaboratorInput.isEmpty()) {
+            if (project == null) {
+                System.out.println("External collaborators must be defined under a project. Assign this task to a project first.");
+                return;
+            }
 
-            if (project != null) {
-                Collaborator existingColl = project.getCollaboratorByName(collaboratorName);
-                if (existingColl == null) {
-                    existingColl = new Collaborator(collaboratorName, collaboratorCategory);
-                    project.addCollaborator(existingColl);
+            String[] collaboratorNames = collaboratorInput.split(",");
+            for (String rawName : collaboratorNames) {
+                String collaboratorName = rawName.trim();
+                if (collaboratorName.isEmpty()) {
+                    continue;
                 }
-
-                int openTasks = getOpenTasksCountForCollaborator(collaboratorName);
-                int limit = existingColl.getOpenTaskLimit();
-                if (openTasks >= limit) {
-                    System.out.println("Collaborator " + collaboratorName + " has reached limit (" + limit + ") of open tasks.");
+                if (isSelfAssignmentName(collaboratorName)) {
+                    continue;
+                }
+                if (!linkExternalCollaboratorToTask(newTask, project, collaboratorName)) {
                     return;
                 }
-
-                // create the linked subtask for collaborator progress
-                Subtask collSubtask = new Subtask("Collaborator: " + collaboratorName, "Assigned collaborator task");
-                try {
-                    newTask.addSubtask(collSubtask);
-                } catch (SubtaskLimitExceededException e) {
-                    System.out.println("ERROR: " + e.getMessage());
-                    return;
-                }
-
             }
         }
 
         System.out.print("Recurrence type (none/daily/weekly/monthly): ");
         String recurrenceType = scanner.nextLine().trim().toLowerCase();
-        if (recurrenceType.isEmpty()) {
+        if (!"none".equals(recurrenceType)
+                && !"daily".equals(recurrenceType)
+                && !"weekly".equals(recurrenceType)
+                && !"monthly".equals(recurrenceType)) {
             recurrenceType = "none";
         }
         newTask.setRecurrenceType(recurrenceType);
 
         if ("none".equalsIgnoreCase(recurrenceType)) {
+            // US-16: enforce open-task-without-due-date limit for non-recurring tasks.
+            if (dueDate == null) {
+                int openTasksWithoutDueDate = countOpenTasksWithoutDueDate();
+                if (openTasksWithoutDueDate >= 50) {
+                    System.out.println("ERROR: Cannot create task. Maximum limit of 50 open tasks without due date has been reached.");
+                    System.out.println("Please set a due date or complete some existing open tasks.");
+                    return;
+                }
+            }
+
+            if (dueDate != null && !isTaskNameDueDateUnique(newTask.getTitle(), dueDate)) {
+                System.out.println("A task with the same name and due date already exists. Cannot create duplicate.");
+                return;
+            }
+
             newTask.setRecurrenceStart(dueDate);
             newTask.setRecurrenceEnd(dueDate);
         } else {
-            newTask.setRecurrenceStart(dueDate);
+            System.out.print("Recurrence start date (YYYY-MM-DD, leave blank to use task due date): ");
+            String startDateInput = scanner.nextLine().trim();
+            LocalDate recurrenceStart = dueDate;
+            if (!startDateInput.isEmpty()) {
+                try {
+                    recurrenceStart = LocalDate.parse(startDateInput);
+                } catch (DateTimeParseException e) {
+                    System.out.println("Invalid start date format. Recurrence creation cancelled.");
+                    return;
+                }
+            }
+
+            if (recurrenceStart == null) {
+                System.out.println("Recurring tasks require a valid start date (or task due date).");
+                return;
+            }
+
+            newTask.setRecurrenceStart(recurrenceStart);
+            newTask.setDuedate(recurrenceStart);
+
             System.out.print("Recurrence interval (number of units, default 1): ");
             String intInput = scanner.nextLine().trim();
             try {
@@ -244,27 +273,52 @@ public class TaskManagementCLI {
 
             System.out.print("Recurrence end date (YYYY-MM-DD): ");
             String endDateInput = scanner.nextLine().trim();
+            if (endDateInput.isEmpty()) {
+                System.out.println("Recurrence end date is required for recurring tasks.");
+                return;
+            }
             try {
                 LocalDate endDate = LocalDate.parse(endDateInput);
+                if (endDate.isBefore(recurrenceStart)) {
+                    System.out.println("Recurrence end date must be on or after the start date.");
+                    return;
+                }
                 newTask.setRecurrenceEnd(endDate);
             } catch (DateTimeParseException e) {
-                System.out.println("Invalid end date; using start date as end date.");
-                newTask.setRecurrenceEnd(dueDate);
+                System.out.println("Invalid end date format. Recurrence creation cancelled.");
+                return;
             }
 
             if ("weekly".equalsIgnoreCase(recurrenceType)) {
                 System.out.print("Enter weekdays for recurrence (comma-separated MONDAY,TUESDAY...): ");
                 String daysInput = scanner.nextLine().trim();
+                Set<DayOfWeek> weekdaySet = parseWeekdaySet(daysInput);
                 ArrayList<String> weekdays = new ArrayList<>();
-                for (String day : daysInput.split(",")) {
-                    if (!day.trim().isEmpty()) {
-                        weekdays.add(day.trim().toUpperCase());
-                    }
+                for (DayOfWeek day : weekdaySet) {
+                    weekdays.add(day.name());
                 }
                 if (weekdays.isEmpty()) {
-                    weekdays.add(dueDate.getDayOfWeek().name());
+                    weekdays.add(recurrenceStart.getDayOfWeek().name());
                 }
                 newTask.setRecurrenceWeekdays(weekdays);
+            } else if ("monthly".equalsIgnoreCase(recurrenceType)) {
+                System.out.print("Monthly recurrence day (1-31, leave blank to use start date day): ");
+                String monthlyDayInput = scanner.nextLine().trim();
+                int monthlyDay = recurrenceStart.getDayOfMonth();
+                if (!monthlyDayInput.isEmpty()) {
+                    try {
+                        int parsedDay = Integer.parseInt(monthlyDayInput);
+                        if (parsedDay < 1 || parsedDay > 31) {
+                            System.out.println("Invalid day of month. Recurrence creation cancelled.");
+                            return;
+                        }
+                        monthlyDay = parsedDay;
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid monthly day value. Recurrence creation cancelled.");
+                        return;
+                    }
+                }
+                newTask.setRecurrenceDayOfMonth(monthlyDay);
             }
 
         }
@@ -272,16 +326,37 @@ public class TaskManagementCLI {
         if ("none".equalsIgnoreCase(newTask.getRecurrenceType())) {
             tasks.add(newTask);
             if (project != null) project.addTask(newTask);
-            logActivity("Created task: '" + newTask.getTitle() + "' with due date " + newTask.getDuedate());
+            try {
+                TaskDAO.insertTask(newTask);
+            } catch (Exception e) {
+                System.out.println("Warning: could not save task to database: " + e.getMessage());
+            }
+            System.out.println("Task created successfully.");
+            persistTaskRelations(newTask);
+            if (project != null && project.getId() > 0) {
+                try { com.example.persistence.ProjectDAO.linkTaskToProject(project.getId(), newTask.getId()); } catch (Exception ignored) {}
+            }
+            logActivity(newTask.getId(), "Task created: '" + newTask.getTitle() + "' with due date " + newTask.getDuedate());
         } else {
             List<Task> occurrences = generateRecurringTasks(newTask);
             for (Task occurrence : occurrences) {
                 if (occurrence.getDuedate() != null && isTaskNameDueDateUnique(occurrence.getTitle(), occurrence.getDuedate())) {
                     tasks.add(occurrence);
                     if (project != null) project.addTask(occurrence);
+                    try {
+                        TaskDAO.insertTask(occurrence);
+                    } catch (Exception e) {
+                        System.out.println("Warning: could not save task to database: " + e.getMessage());
+                    }
                 }
             }
-            logActivity("Created recurring task: '" + newTask.getTitle() + "' (" + occurrences.size() + " occurrences)");
+            for (Task occurrence : occurrences) {
+                persistTaskRelations(occurrence);
+                if (project != null && project.getId() > 0 && occurrence.getId() > 0) {
+                    try { com.example.persistence.ProjectDAO.linkTaskToProject(project.getId(), occurrence.getId()); } catch (Exception ignored) {}
+                }
+            }
+            logActivity(0, "Created recurring task: '" + newTask.getTitle() + "' (" + occurrences.size() + " occurrences)");
         }
     }
 
@@ -301,60 +376,140 @@ public class TaskManagementCLI {
         if (baseTask.getRecurrenceStart() == null || baseTask.getRecurrenceEnd() == null) {
             return occurrences;
         }
-        LocalDate current = baseTask.getRecurrenceStart();
+        LocalDate start = baseTask.getRecurrenceStart();
         LocalDate end = baseTask.getRecurrenceEnd();
         String type = baseTask.getRecurrenceType() == null ? "none" : baseTask.getRecurrenceType().toLowerCase();
         int interval = Math.max(1, baseTask.getRecurrenceInterval());
 
-        while (!current.isAfter(end)) {
-            Task occurrence = new Task();
-            occurrence.setTitle(baseTask.getTitle());
-            occurrence.setDescription(baseTask.getDescription());
-            occurrence.setPriorityLevel(baseTask.getPriorityLevel());
-            occurrence.setStatus(baseTask.getStatus());
-            occurrence.setTags(baseTask.getTags());
-            occurrence.setCollaborator(baseTask.getCollaborator());
-            occurrence.setCollaboratorCategory(baseTask.getCollaboratorCategory());
-            occurrence.setRecurrenceType(baseTask.getRecurrenceType());
-            occurrence.setRecurrenceInterval(baseTask.getRecurrenceInterval());
-            occurrence.setRecurrenceWeekdays(baseTask.getRecurrenceWeekdays());
-            occurrence.setRecurrenceStart(baseTask.getRecurrenceStart());
-            occurrence.setRecurrenceEnd(baseTask.getRecurrenceEnd());
-            occurrence.setDuedate(current);
-            occurrence.setSubtask(baseTask.getSubtask());
-            occurrences.add(occurrence);
-
-            switch (type) {
-                case "daily":
-                    current = current.plusDays(interval);
-                    break;
-                case "weekly":
-                    if (baseTask.getRecurrenceWeekdays() == null || baseTask.getRecurrenceWeekdays().isEmpty()) {
-                        current = current.plusWeeks(interval);
-                    } else {
-                        // Next matching weekday
-                        LocalDate next = current.plusDays(1);
-                        while (!next.isAfter(end)) {
-                            if (baseTask.getRecurrenceWeekdays().contains(next.getDayOfWeek().name())) {
-                                current = next;
-                                break;
-                            }
-                            next = next.plusDays(1);
-                        }
-                        if (next.isAfter(end)) {
-                            current = end.plusDays(1);
+        switch (type) {
+            case "daily":
+                for (LocalDate current = start; !current.isAfter(end); current = current.plusDays(interval)) {
+                    occurrences.add(buildOccurrenceTask(baseTask, current));
+                }
+                break;
+            case "weekly":
+                Set<DayOfWeek> selectedWeekdays = parseWeekdaySet(baseTask.getRecurrenceWeekdays(), start.getDayOfWeek());
+                LocalDate weeklyAnchor = start.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+                for (LocalDate current = start; !current.isAfter(end); current = current.plusDays(1)) {
+                    long weeksSinceStart = ChronoUnit.WEEKS.between(
+                            weeklyAnchor,
+                            current.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                    );
+                    if (weeksSinceStart % interval == 0 && selectedWeekdays.contains(current.getDayOfWeek())) {
+                        occurrences.add(buildOccurrenceTask(baseTask, current));
+                    }
+                }
+                break;
+            case "monthly":
+                int monthlyDay = baseTask.getRecurrenceDayOfMonth() > 0
+                        ? baseTask.getRecurrenceDayOfMonth()
+                        : start.getDayOfMonth();
+                LocalDate monthCursor = start.withDayOfMonth(1);
+                LocalDate monthAnchor = start.withDayOfMonth(1);
+                while (!monthCursor.isAfter(end)) {
+                    long monthsSinceStart = ChronoUnit.MONTHS.between(monthAnchor, monthCursor);
+                    if (monthsSinceStart % interval == 0 && monthlyDay <= monthCursor.lengthOfMonth()) {
+                        LocalDate occurrenceDate = monthCursor.withDayOfMonth(monthlyDay);
+                        if (!occurrenceDate.isBefore(start) && !occurrenceDate.isAfter(end)) {
+                            occurrences.add(buildOccurrenceTask(baseTask, occurrenceDate));
                         }
                     }
-                    break;
-                case "monthly":
-                    current = current.plusMonths(interval);
-                    break;
-                default:
-                    current = end.plusDays(1);
-                    break;
+                    monthCursor = monthCursor.plusMonths(1);
+                }
+                break;
+            default:
+                if (!start.isAfter(end)) {
+                    occurrences.add(buildOccurrenceTask(baseTask, start));
+                }
+                break;
+        }
+
+        return occurrences;
+    }
+
+    private Task buildOccurrenceTask(Task baseTask, LocalDate dueDate) {
+        Task occurrence = new Task();
+        occurrence.setTitle(baseTask.getTitle());
+        occurrence.setDescription(baseTask.getDescription());
+        occurrence.setPriorityLevel(baseTask.getPriorityLevel());
+        occurrence.setStatus(baseTask.getStatus());
+        occurrence.setCollaborator(baseTask.getCollaborator());
+        occurrence.setCollaboratorCategory(baseTask.getCollaboratorCategory());
+        occurrence.setRecurrenceType(baseTask.getRecurrenceType());
+        occurrence.setRecurrenceInterval(baseTask.getRecurrenceInterval());
+        occurrence.setRecurrenceStart(baseTask.getRecurrenceStart());
+        occurrence.setRecurrenceEnd(baseTask.getRecurrenceEnd());
+        occurrence.setRecurrenceDayOfMonth(baseTask.getRecurrenceDayOfMonth());
+        occurrence.setDuedate(dueDate);
+
+        ArrayList<Tag> copiedTags = new ArrayList<>();
+        if (baseTask.getTags() != null) {
+            for (Tag tag : baseTask.getTags()) {
+                if (tag != null) {
+                    copiedTags.add(new Tag(tag.getName()));
+                }
             }
         }
-        return occurrences;
+        occurrence.setTags(copiedTags);
+
+        ArrayList<Subtask> copiedSubtasks = new ArrayList<>();
+        if (baseTask.getSubtask() != null) {
+            for (Subtask subtask : baseTask.getSubtask()) {
+                if (subtask != null) {
+                    Subtask subtaskCopy = new Subtask(subtask.getTitle(), subtask.getDescription());
+                    subtaskCopy.setStatus(subtask.getStatus());
+                    copiedSubtasks.add(subtaskCopy);
+                }
+            }
+        }
+        occurrence.setSubtask(copiedSubtasks);
+
+        ArrayList<String> weekdaysCopy = new ArrayList<>();
+        if (baseTask.getRecurrenceWeekdays() != null) {
+            weekdaysCopy.addAll(baseTask.getRecurrenceWeekdays());
+        }
+        occurrence.setRecurrenceWeekdays(weekdaysCopy);
+
+        return occurrence;
+    }
+
+    private Set<DayOfWeek> parseWeekdaySet(String daysInput) {
+        Set<DayOfWeek> weekdays = new HashSet<>();
+        if (daysInput == null || daysInput.trim().isEmpty()) {
+            return weekdays;
+        }
+        for (String day : daysInput.split(",")) {
+            String normalized = day.trim().toUpperCase();
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            try {
+                weekdays.add(DayOfWeek.valueOf(normalized));
+            } catch (IllegalArgumentException ignored) {
+                // Ignore invalid weekday entries provided by user input.
+            }
+        }
+        return weekdays;
+    }
+
+    private Set<DayOfWeek> parseWeekdaySet(List<String> dayNames, DayOfWeek fallbackDay) {
+        Set<DayOfWeek> weekdays = new HashSet<>();
+        if (dayNames != null) {
+            for (String dayName : dayNames) {
+                if (dayName == null) {
+                    continue;
+                }
+                try {
+                    weekdays.add(DayOfWeek.valueOf(dayName.trim().toUpperCase()));
+                } catch (IllegalArgumentException ignored) {
+                    // Ignore invalid values and keep parsing the rest.
+                }
+            }
+        }
+        if (weekdays.isEmpty() && fallbackDay != null) {
+            weekdays.add(fallbackDay);
+        }
+        return weekdays;
     }
 
     private void assignTaskToProject() {
@@ -374,6 +529,13 @@ public class TaskManagementCLI {
         }
         Task selectedTask = tasks.get(taskNumber - 1);
 
+        Project existingProject = findProjectForTask(selectedTask);
+        if (existingProject != null) {
+            System.out.println("Task '" + selectedTask.getTitle() + "' is already in project '" + existingProject.getTitle() + "'.");
+            System.out.println("Use Edit Task (option 4) > Edit associated project to move it.");
+            return;
+        }
+
         System.out.println("Choose project:");
         for (int i = 0; i < projects.size(); i++) {
             System.out.println((i + 1) + ". " + projects.get(i).getTitle());
@@ -385,36 +547,26 @@ public class TaskManagementCLI {
         }
         Project project = projects.get(projectNumber - 1);
 
-        System.out.print("Assign collaborator name (optional): ");
-        String collaboratorName = scanner.nextLine().trim();
-        if (!collaboratorName.isEmpty()) {
-            Collaborator collaborator = project.getCollaboratorByName(collaboratorName);
-            if (collaborator == null) {
-                System.out.print("Collaborator category (Junior/Intermediate/Senior): ");
-                String category = scanner.nextLine().trim();
-                collaborator = new Collaborator(collaboratorName, category);
-                project.addCollaborator(collaborator);
+        System.out.print("Assign additional external collaborator(s) (comma-separated names, optional): ");
+        String collaboratorInput = scanner.nextLine().trim();
+        if (!collaboratorInput.isEmpty()) {
+            String[] collaboratorNames = collaboratorInput.split(",");
+            for (String rawName : collaboratorNames) {
+                String collaboratorName = rawName.trim();
+                if (collaboratorName.isEmpty()) {
+                    continue;
+                }
+                if (isSelfAssignmentName(collaboratorName)) {
+                    continue;
+                }
+                if (!linkExternalCollaboratorToTask(selectedTask, project, collaboratorName)) {
+                    return;
+                }
             }
-            int openTasks = getOpenTasksCountForCollaborator(collaboratorName);
-            if (openTasks >= collaborator.getOpenTaskLimit()) {
-                System.out.println("Collaborator " + collaboratorName + " has reached the open task limit.");
-                return;
-            }
-            selectedTask.setCollaborator(collaboratorName);
-            selectedTask.setCollaboratorCategory(collaborator.getCategory());
-
-            Subtask collSubtask = new Subtask("Collaborator task: " + collaboratorName, "Assigned collaborator");
-            try {
-                selectedTask.addSubtask(collSubtask);
-            } catch (SubtaskLimitExceededException e) {
-                System.out.println("ERROR: " + e.getMessage());
-                return;
-            }
-            logActivity("Assigned collaborator " + collaboratorName + " to task " + selectedTask.getTitle());
         }
 
         project.addTask(selectedTask);
-        logActivity("Assigned task " + selectedTask.getTitle() + " to project " + project.getTitle());
+        logActivity(selectedTask.getId(), "Assigned to project '" + project.getTitle() + "'");
         System.out.println("Task assigned successfully.");
     }
 
@@ -442,20 +594,20 @@ public class TaskManagementCLI {
                     String oldTitle = task.getTitle();
                     String newTitle = scanner.nextLine();
                     task.setTitle(newTitle);
-                    logActivity("Updated task title from '" + oldTitle + "' to '" + newTitle + "'");
+                    logActivity(task.getId(), "Task title updated from '" + oldTitle + "' to '" + newTitle + "'");
                     break;
                 case 2:
                     System.out.print("Enter new task description: ");
                     String newDescription = scanner.nextLine();
                     task.setDescription(newDescription);
-                    logActivity("Updated task description for '" + task.getTitle() + "'");
+                    logActivity(task.getId(), "Task description updated");
                     break;
                 case 3:
                     System.out.print("Enter new task priority level (low, medium, high): ");
                     String oldPriority = task.getPriorityLevel();
                     String newPriority = scanner.nextLine();
                     task.setPriorityLevel(newPriority);
-                    logActivity("Updated task priority from '" + oldPriority + "' to '" + newPriority + "' for '" + task.getTitle() + "'");
+                    logActivity(task.getId(), "Priority updated from '" + oldPriority + "' to '" + newPriority + "'");
                     break;
                 case 4:
                     System.out.print("Enter new task due date (YYYY-MM-DD): ");
@@ -464,32 +616,100 @@ public class TaskManagementCLI {
                         LocalDate oldDueDate = task.getDuedate();
                         LocalDate newDueDate = LocalDate.parse(dueDateInput);
                         task.setDuedate(newDueDate);
-                        logActivity("Updated task due date from '" + oldDueDate + "' to '" + newDueDate + "' for '" + task.getTitle() + "'");
+                        logActivity(task.getId(), "Due date updated from '" + oldDueDate + "' to '" + newDueDate + "'");
                     } catch (DateTimeParseException e) {
                         System.out.println("Invalid date format. Due date will not be updated.");
                     }
                     break;
                 case 5:
-                    System.out.print("Enter new task status (open, in progress, completed): ");
+                    System.out.print("Enter new task status (open / in progress / completed / cancelled): ");
                     String oldStatus = task.getStatus();
-                    String newStatus = scanner.nextLine();
+                    String newStatus = scanner.nextLine().trim();
                     task.setStatus(newStatus);
-                    logActivity("Updated task status from '" + oldStatus + "' to '" + newStatus + "' for '" + task.getTitle() + "'");
+                    logActivity(task.getId(), "Status updated from '" + oldStatus + "' to '" + newStatus + "'");
                     if ("completed".equalsIgnoreCase(newStatus)) {
-                        logActivity("Task completed: '" + task.getTitle() + "'");
+                        logActivity(task.getId(), "Task completed");
                     } else if ("cancelled".equalsIgnoreCase(newStatus) || "canceled".equalsIgnoreCase(newStatus)) {
-                        logActivity("Task cancelled: '" + task.getTitle() + "'");
+                        logActivity(task.getId(), "Task cancelled");
                     }
-                    break;  
-                case 6:
-                    System.out.println("[Edit associated project] - functionality to be implemented.");
                     break;
-                case 7:
-                    System.out.println("[Edit tags] - functionality to be implemented.");
-                    break;  
-            
+                case 6: {
+                    Project currentProject = findProjectForTask(task);
+                    System.out.println("Current project: " + (currentProject == null ? "None" : currentProject.getTitle()));
+                    System.out.println("1. Remove from current project");
+                    System.out.println("2. Move to a different project");
+                    System.out.println("3. Cancel");
+                    int projectEditChoice = readInt("Enter choice: ");
+                    if (projectEditChoice == 1) {
+                        if (currentProject != null) {
+                            currentProject.removeTask(task);
+                            logActivity(task.getId(), "Removed from project '" + currentProject.getTitle() + "'");
+                            System.out.println("Task removed from project.");
+                        } else {
+                            System.out.println("Task is not in any project.");
+                        }
+                    } else if (projectEditChoice == 2) {
+                        if (projects.isEmpty()) {
+                            System.out.println("No projects available.");
+                        } else {
+                            System.out.println("Select new project:");
+                            for (int i = 0; i < projects.size(); i++) {
+                                System.out.println((i + 1) + ". " + projects.get(i).getTitle());
+                            }
+                            int projectChoice = readInt("Enter project number: ");
+                            if (projectChoice >= 1 && projectChoice <= projects.size()) {
+                                Project newProject = projects.get(projectChoice - 1);
+                                if (currentProject != null) {
+                                    currentProject.removeTask(task);
+                                }
+                                newProject.addTask(task);
+                                logActivity(task.getId(), "Moved to project '" + newProject.getTitle() + "'");
+                                System.out.println("Task moved to project '" + newProject.getTitle() + "'.");
+                            } else {
+                                System.out.println("Invalid project number.");
+                            }
+                        }
+                    }
+                    break;
+                }
+                case 7: {
+                    System.out.println("Current tags: " + task.getTagsAsString());
+                    System.out.println("1. Add tag");
+                    System.out.println("2. Remove tag");
+                    System.out.println("3. Clear all tags");
+                    int tagEditChoice = readInt("Enter choice: ");
+                    if (tagEditChoice == 1) {
+                        System.out.print("Enter tag name to add: ");
+                        String tagName = scanner.nextLine().trim();
+                        if (!tagName.isEmpty()) {
+                            task.addTag(new Tag(tagName));
+                            logActivity(task.getId(), "Tag '" + tagName + "' added");
+                            System.out.println("Tag added.");
+                        }
+                    } else if (tagEditChoice == 2) {
+                        System.out.print("Enter tag name to remove: ");
+                        String tagToRemove = scanner.nextLine().trim();
+                        boolean tagRemoved = task.getTags().removeIf(t2 -> t2.getName().equalsIgnoreCase(tagToRemove));
+                        if (tagRemoved) {
+                            logActivity(task.getId(), "Tag '" + tagToRemove + "' removed");
+                            System.out.println("Tag removed.");
+                        } else {
+                            System.out.println("Tag '" + tagToRemove + "' not found.");
+                        }
+                    } else if (tagEditChoice == 3) {
+                        task.getTags().clear();
+                        logActivity(task.getId(), "All tags cleared");
+                        System.out.println("All tags cleared.");
+                    }
+                    break;
+                }
                 default:
                     break;
+            }
+            try {
+                TaskDAO.updateTask(task);
+            } catch (Exception e) {
+                System.out.println("Warning: could not persist change to database: " + e.getMessage());
             }
 
         } else {
@@ -498,7 +718,11 @@ public class TaskManagementCLI {
     }
 
     private void editProject() {
-        System.out.println("Which projects would you like to edit? (Enter project number)");
+        if (projects.isEmpty()) {
+            System.out.println("No projects available to edit.");
+            return;
+        }
+        System.out.println("Which project would you like to edit?");
         for(Project p : projects) {
             System.out.println((projects.indexOf(p) + 1) + ". " + p.getTitle());
         }
@@ -625,7 +849,7 @@ public class TaskManagementCLI {
                     break;
                 case 3:
                     for (Task t : tasks) {
-                        if(t.getStatus() == "open") {
+                        if ("open".equalsIgnoreCase(t.getStatus())) {
                             System.out.println(t.toString());
                         }
                     }
@@ -702,10 +926,8 @@ public class TaskManagementCLI {
 
     private void searchTasks() {
         System.out.println("Search criteria (leave blank to skip):");
-        System.out.print("Task name contains: ");
-        String nameMatch = scanner.nextLine().trim().toLowerCase();
-        System.out.print("Task description contains: ");
-        String descriptionMatch = scanner.nextLine().trim().toLowerCase();
+        System.out.print("Keyword (matches task title or description): ");
+        String keyword = scanner.nextLine().trim().toLowerCase();
         System.out.print("Status (open, in progress, completed): ");
         String statusCriteria = scanner.nextLine().trim().toLowerCase();
         System.out.print("Start due date (YYYY-MM-DD): ");
@@ -728,7 +950,7 @@ public class TaskManagementCLI {
             System.out.println("Invalid date; ignoring date filter.");
         }
 
-        boolean noCriteria = nameMatch.isEmpty() && descriptionMatch.isEmpty() && statusCriteria.isEmpty()
+        boolean noCriteria = keyword.isEmpty() && statusCriteria.isEmpty()
                 && startDate == null && endDate == null && dayOfWeek.isEmpty();
 
         List<Task> matches = new ArrayList<>();
@@ -736,11 +958,12 @@ public class TaskManagementCLI {
             if (noCriteria && !"open".equalsIgnoreCase(t.getStatus())) {
                 continue;
             }
-            if (!nameMatch.isEmpty() && (t.getTitle() == null || !t.getTitle().toLowerCase().contains(nameMatch))) {
-                continue;
-            }
-            if (!descriptionMatch.isEmpty() && (t.getDescription() == null || !t.getDescription().toLowerCase().contains(descriptionMatch))) {
-                continue;
+            if (!keyword.isEmpty()) {
+                String title = t.getTitle() == null ? "" : t.getTitle().toLowerCase();
+                String description = t.getDescription() == null ? "" : t.getDescription().toLowerCase();
+                if (!title.contains(keyword) && !description.contains(keyword)) {
+                    continue;
+                }
             }
             if (!statusCriteria.isEmpty() && (t.getStatus() == null || !t.getStatus().equalsIgnoreCase(statusCriteria))) {
                 continue;
@@ -764,7 +987,7 @@ public class TaskManagementCLI {
             for (Task t : matches) {
                 System.out.println(t.toString());
             }
-            logActivity("Performed search with criteria; result size=" + matches.size());
+            logActivity(0, "Performed search with criteria; result size=" + matches.size());
             System.out.print("Export this search result to CSV? (y/n): ");
             String exportChoice = scanner.nextLine().trim().toLowerCase();
             if (exportChoice.startsWith("y")) {
@@ -774,19 +997,88 @@ public class TaskManagementCLI {
     }
 
     private void viewTaskHistory() {
-        if (activityHistory.isEmpty()) {
-            System.out.println("No task activity history available.");
+        if (tasks.isEmpty()) {
+            System.out.println("No tasks available.");
             return;
         }
-        System.out.println("Task activity history:");
-        for (ActivityEntry entry : activityHistory) {
-            System.out.println(entry.toString());
+        System.out.println("Select a task to view its activity history:");
+        for (int i = 0; i < tasks.size(); i++) {
+            System.out.println((i + 1) + ". " + tasks.get(i).getTitle());
+        }
+        System.out.println("0. View all activity history");
+        int taskNumber = readInt("Enter task number: ");
+
+        try {
+            List<ActivityEntry> history;
+            if (taskNumber == 0) {
+                history = ActivityDAO.getAllActivities();
+                System.out.println("All task activity history:");
+            } else if (taskNumber >= 1 && taskNumber <= tasks.size()) {
+                Task selected = tasks.get(taskNumber - 1);
+                history = ActivityDAO.getActivitiesByTaskId(selected.getId());
+                System.out.println("Activity history for task '" + selected.getTitle() + "':");
+            } else {
+                System.out.println("Invalid task number.");
+                return;
+            }
+            if (history.isEmpty()) {
+                System.out.println("No activity history found.");
+            } else {
+                for (ActivityEntry entry : history) {
+                    System.out.println(entry.toString());
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("Could not retrieve activity history: " + e.getMessage());
         }
     }
 
-    private void logActivity(String description) {
-        ActivityEntry entry = new ActivityEntry(LocalDateTime.now(), description);
+    private void logActivity(int taskId, String description) {
+        ActivityEntry entry = new ActivityEntry(LocalDateTime.now(), taskId, description);
         activityHistory.add(entry);
+        try {
+            ActivityDAO.insertActivity(entry);
+        } catch (Exception e) {
+            // Do not interrupt the user workflow if activity logging fails.
+        }
+    }
+
+    /**
+     * Persists the subtasks, tags, and collaborator entries for a task that already
+     * has a valid database id (> 0).
+     */
+    private void persistTaskRelations(Task task) {
+        if (task.getId() <= 0) return;
+        // Subtasks
+        if (task.getSubtask() != null) {
+            for (com.example.model.Subtask sub : task.getSubtask()) {
+                try {
+                    com.example.persistence.SubtaskDAO.insertSubtask(task.getId(), sub);
+                } catch (Exception e) {
+                    // best-effort
+                }
+            }
+        }
+        // Tags
+        if (task.getTags() != null) {
+            for (Tag tag : task.getTags()) {
+                try {
+                    int tagId = com.example.persistence.TagDAO.getOrCreateTagId(tag.getName());
+                    com.example.persistence.TagDAO.addTagToTask(task.getId(), tagId);
+                } catch (Exception e) {
+                    // best-effort
+                }
+            }
+        }
+        // Collaborators
+        for (Map.Entry<String, String> entry : task.getCollaboratorAssignments().entrySet()) {
+            try {
+                com.example.persistence.CollaboratorDAO.insertCollaborator(
+                        new Collaborator(entry.getKey(), entry.getValue()));
+            } catch (Exception e) {
+                // best-effort
+            }
+        }
     }
 
     private boolean isTaskNameDueDateUnique(String title, LocalDate dueDate) {
@@ -807,7 +1099,12 @@ public class TaskManagementCLI {
         }
         Project newProject = new Project(projectName, projectDescription);
         projects.add(newProject);
-        logActivity("Created project: '" + projectName + "'");
+        try {
+            com.example.persistence.ProjectDAO.insertProject(newProject);
+        } catch (Exception e) {
+            System.out.println("Warning: could not save project to database: " + e.getMessage());
+        }
+        logActivity(0, "Created project: '" + projectName + "'");
         return newProject;
     }
 
@@ -815,7 +1112,10 @@ public class TaskManagementCLI {
         if (collaboratorName == null) return 0;
         int count = 0;
         for (Task task : tasks) {
-            if (collaboratorName.equalsIgnoreCase(task.getCollaborator()) && !"completed".equalsIgnoreCase(task.getStatus()) ) {
+            if (task.hasCollaborator(collaboratorName)
+                    && !"completed".equalsIgnoreCase(task.getStatus())
+                    && !"cancelled".equalsIgnoreCase(task.getStatus())
+                    && !"canceled".equalsIgnoreCase(task.getStatus())) {
                 count++;
             }
         }
@@ -853,6 +1153,12 @@ public class TaskManagementCLI {
 
                 String collaboratorName = "";
                 String collaboratorCategory = "";
+                if (task.getCollaborator() != null) {
+                    collaboratorName = task.getCollaborator();
+                }
+                if (task.getCollaboratorCategory() != null) {
+                    collaboratorCategory = task.getCollaboratorCategory();
+                }
 
                 writer.write(csvEscape(task.getTitle()) + ","
                         + csvEscape(task.getDescription()) + ","
@@ -867,7 +1173,7 @@ public class TaskManagementCLI {
             }
 
             System.out.println("Search results exported to " + filePath);
-            logActivity("Exported " + tasksToExport.size() + " task(s) to CSV: " + filePath);
+            logActivity(0, "Exported " + tasksToExport.size() + " task(s) to CSV: " + filePath);
         } catch (IOException e) {
             System.out.println("Failed to write CSV file: " + e.getMessage());
         }
@@ -913,7 +1219,7 @@ public class TaskManagementCLI {
             String exportedPath = taskExportGateway.exportTask(selectedTask, project, outputPathInput);
             String absolutePath = Paths.get(exportedPath).toAbsolutePath().toString();
             System.out.println("Task exported successfully to: " + absolutePath);
-            logActivity("Exported task '" + selectedTask.getTitle() + "' to iCal file: " + absolutePath);
+            logActivity(selectedTask.getId(), "Exported to iCal file: " + absolutePath);
         } catch (IllegalArgumentException e) {
             System.out.println("Task export failed: " + e.getMessage());
         } catch (IOException e) {
@@ -967,7 +1273,7 @@ public class TaskManagementCLI {
             String absolutePath = Paths.get(exportedPath).toAbsolutePath().toString();
             System.out.println("Project export successful: " + absolutePath);
             System.out.println("Tasks exported: " + exportedCount + " | Tasks skipped (no due date): " + skippedCount);
-            logActivity("Exported project '" + selectedProject.getTitle() + "' to iCal file: " + absolutePath
+            logActivity(0, "Exported project '" + selectedProject.getTitle() + "' to iCal file: " + absolutePath
                     + " (exported=" + exportedCount + ", skipped=" + skippedCount + ")");
         } catch (IllegalArgumentException e) {
             System.out.println("Project export failed: " + e.getMessage());
@@ -1036,7 +1342,7 @@ public class TaskManagementCLI {
             String exportedPath = taskExportGateway.exportFilteredTasks(filtered, taskToProject, outputPath);
             String absolutePath = Paths.get(exportedPath).toAbsolutePath().toString();
             System.out.println(filtered.size() + " task(s) exported successfully to: " + absolutePath);
-            logActivity("Exported " + filtered.size() + " filtered task(s) to iCal: " + absolutePath);
+            logActivity(0, "Exported " + filtered.size() + " filtered task(s) to iCal: " + absolutePath);
         } catch (IllegalArgumentException e) {
             System.out.println("Export failed: " + e.getMessage());
         } catch (IOException e) {
@@ -1121,25 +1427,10 @@ public class TaskManagementCLI {
                     }
                 }
 
-                String collaboratorName = columns[8].trim();
-                String collaboratorCategory = columns.length > 9 ? columns[9].trim() : "";
-                if (!collaboratorName.isEmpty()) {
-                    task.setCollaborator(collaboratorName);
-                    task.setCollaboratorCategory(collaboratorCategory);
-                }
-
-                if (!isTaskNameDueDateUnique(task.getTitle(), task.getDuedate())) {
-                    System.out.println("Skipping duplicate task with same title and due date: " + task.getTitle() + " " + task.getDuedate());
-                    continue;
-                }
-
-                tasks.add(task);
-                addedCount++;
-
                 String projectName = columns[6].trim();
                 String projectDescription = columns[7].trim();
+                Project project = null;
                 if (!projectName.isEmpty()) {
-                    Project project = null;
                     for (Project p : projects) {
                         if (projectName.equalsIgnoreCase(p.getTitle())) {
                             project = p;
@@ -1149,28 +1440,76 @@ public class TaskManagementCLI {
                     if (project == null) {
                         project = new Project(projectName, projectDescription);
                         projects.add(project);
+                        try {
+                            com.example.persistence.ProjectDAO.insertProject(project);
+                        } catch (Exception ignored) {}
+                    }
+                }
+
+                String collaboratorName = columns[8].trim();
+                String collaboratorCategory = columns.length > 9 ? columns[9].trim() : "";
+                if (!collaboratorName.isEmpty() && !isSelfAssignmentName(collaboratorName)) {
+                    if (project == null) {
+                        System.out.println("Skipping row: collaborator assignments require a project. Row task=" + task.getTitle());
+                        continue;
                     }
 
-                    String collaboratorNameRow = columns[8].trim();
-                    String collaboratorCategoryRow = columns.length > 9 ? columns[9].trim() : "";
-                    if (!collaboratorNameRow.isEmpty()) {
-                        Collaborator coll = project.getCollaboratorByName(collaboratorNameRow);
-                        if (coll == null) {
-                            coll = new Collaborator(collaboratorNameRow, collaboratorCategoryRow);
-                            project.addCollaborator(coll);
-                        }
-                        int openCount = getOpenTasksCountForCollaborator(collaboratorNameRow);
-                        if (openCount >= coll.getOpenTaskLimit()) {
-                            System.out.println("Collaborator " + collaboratorNameRow + " is at limit; skipping this task.");
+                    Collaborator coll = project.getCollaboratorByName(collaboratorName);
+                    if (coll == null) {
+                        String normalizedCategory = normalizeCollaboratorCategory(collaboratorCategory);
+                        if (normalizedCategory == null) {
+                            System.out.println("Skipping row: invalid collaborator category for " + collaboratorName + ": " + collaboratorCategory);
                             continue;
                         }
+                        coll = new Collaborator(collaboratorName, normalizedCategory);
+                        project.addCollaborator(coll);
+                        try {
+                            com.example.persistence.CollaboratorDAO.insertCollaborator(coll);
+                        } catch (Exception ignored) {}
                     }
 
+                    int openCount = getOpenTasksCountForCollaborator(collaboratorName);
+                    if (openCount >= coll.getOpenTaskLimit()) {
+                        System.out.println("Collaborator " + collaboratorName + " is at limit; skipping this task.");
+                        continue;
+                    }
+
+                    task.addCollaboratorAssignment(collaboratorName, coll.getCategory());
+                    try {
+                        task.addSubtask(new Subtask("Collaborator: " + collaboratorName, "Assigned collaborator task"));
+                    } catch (SubtaskLimitExceededException e) {
+                        System.out.println("Warning: " + e.getMessage() + " Skipping collaborator linkage for this task.");
+                    }
+                }
+
+                if (!isTaskNameDueDateUnique(task.getTitle(), task.getDuedate())) {
+                    System.out.println("Skipping duplicate task with same title and due date: " + task.getTitle() + " " + task.getDuedate());
+                    continue;
+                }
+
+                tasks.add(task);
+                addedCount++;
+                try {
+                    TaskDAO.insertTask(task);
+                } catch (Exception e) {
+                    System.out.println("Warning: could not save task to database: " + e.getMessage());
+                }
+
+                persistTaskRelations(task);
+                if (project != null && project.getId() > 0 && task.getId() > 0) {
+                    try {
+                        com.example.persistence.ProjectDAO.linkTaskToProject(project.getId(), task.getId());
+                    } catch (Exception ignored) {
+                        // Best-effort relation sync for imported rows.
+                    }
+                }
+
+                if (project != null) {
                     project.addTask(task);
                 }
             }
 
-            logActivity("Imported " + addedCount + " task(s) from CSV: " + filePath);
+            logActivity(0, "Imported " + addedCount + " task(s) from CSV: " + filePath);
             System.out.println("Imported " + addedCount + " task(s) from CSV.");
         } catch (IOException e) {
             System.out.println("Failed to read CSV file: " + e.getMessage());
@@ -1201,6 +1540,75 @@ public class TaskManagementCLI {
         fields.add(current.toString());
 
         return fields.toArray(new String[0]);
+    }
+
+    private boolean isSelfAssignmentName(String collaboratorName) {
+        if (collaboratorName == null) {
+            return false;
+        }
+        String normalized = collaboratorName.trim().toLowerCase();
+        return "self".equals(normalized) || "me".equals(normalized) || "current user".equals(normalized);
+    }
+
+    private boolean linkExternalCollaboratorToTask(Task task, Project project, String collaboratorName) {
+        if (task == null || project == null || collaboratorName == null || collaboratorName.trim().isEmpty()) {
+            return false;
+        }
+
+        Collaborator collaborator = project.getCollaboratorByName(collaboratorName);
+        if (collaborator == null) {
+            System.out.print("Collaborator category for " + collaboratorName + " (Junior/Intermediate/Senior): ");
+            String category = scanner.nextLine().trim();
+            String normalizedCategory = normalizeCollaboratorCategory(category);
+            if (normalizedCategory == null) {
+                System.out.println("Invalid collaborator category. Use Junior, Intermediate, or Senior.");
+                return false;
+            }
+            collaborator = new Collaborator(collaboratorName, normalizedCategory);
+            project.addCollaborator(collaborator);
+            try {
+                com.example.persistence.CollaboratorDAO.insertCollaborator(collaborator);
+            } catch (Exception ignored) {}
+        }
+
+        if (task.hasCollaborator(collaboratorName)) {
+            return true;
+        }
+
+        int openTasks = getOpenTasksCountForCollaborator(collaboratorName);
+        int limit = collaborator.getOpenTaskLimit();
+        if (openTasks >= limit) {
+            System.out.println("Collaborator " + collaboratorName + " has reached limit (" + limit + ") of open tasks.");
+            return false;
+        }
+
+        task.addCollaboratorAssignment(collaboratorName, collaborator.getCategory());
+        Subtask collSubtask = new Subtask("Collaborator: " + collaboratorName, "Assigned collaborator task");
+        try {
+            task.addSubtask(collSubtask);
+        } catch (SubtaskLimitExceededException e) {
+            System.out.println("ERROR: " + e.getMessage());
+            return false;
+        }
+
+        logActivity(task.getId(), "Collaborator '" + collaboratorName + "' assigned");
+        return true;
+    }
+
+    private String normalizeCollaboratorCategory(String categoryInput) {
+        if (categoryInput == null) {
+            return null;
+        }
+        switch (categoryInput.trim().toLowerCase()) {
+            case "junior":
+                return "Junior";
+            case "intermediate":
+                return "Intermediate";
+            case "senior":
+                return "Senior";
+            default:
+                return null;
+        }
     }
 
     private void viewOverloadedCollaborators() {
