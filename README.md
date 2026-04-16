@@ -138,5 +138,8 @@ The system enforces the following OCL constraints (see `docs/OCL/constraints.txt
 
 ---
 
+## Demo Video
+https://youtu.be/Q2HzAb_9qJ8
+---
 ## License
 This project is for educational purposes as part of SOEN 342 at Concordia University.
